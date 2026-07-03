@@ -1,0 +1,58 @@
+# Projects listed on https://averagechris.srht.site/
+#
+# Each [[projects]] entry renders a card on the homepage and tells the
+# site builder which subdirectory to mirror when republishing the root.
+#
+# IMPORTANT: every subdirectory ever published to this Pages site MUST be
+# listed here (even with `listed = false`), because a root publish replaces
+# the entire site. See README.md.
+#
+# Add entries with: nix run .#add-project -- <path> --description "..."
+
+[site]
+domain = "averagechris.srht.site"
+title = "~averagechris"
+name = "Chris"
+about = """
+I'm Chris. I like computer nerd stuff, gardening, and riding bikes. \
+Based in Los Angeles. I host my personal open source projects on \
+SourceHut and publish prebuilt binaries here."""
+
+[[site.links]]
+label = "sourcehut"
+url = "https://sr.ht/~averagechris/"
+
+[[site.links]]
+label = "git"
+url = "https://git.sr.ht/~averagechris/"
+
+[[projects]]
+# subdirectory under https://averagechris.srht.site/
+path = "linear-cli"
+name = "linear-cli"
+description = "A hardened Rust CLI for Linear.app. Keyring-only auth, no telemetry, no self-update."
+repo = "https://git.sr.ht/~averagechris/linear-cli"
+
+[[projects]]
+path = "slack"
+name = "slack-rs"
+description = "A hardened Rust CLI for the Slack Web API, for me and my friends (you)."
+repo = "https://git.sr.ht/~averagechris/slack"
+
+[[projects]]
+path = "granola-cli"
+name = "granola-cli"
+description = "A Rust CLI for Granola meeting notes."
+repo = "https://git.sr.ht/~averagechris/granola-cli"
+
+[[projects]]
+path = "ctx"
+name = "ctx"
+description = "Local-first agent history search CLI. Indexes your past coding-agent sessions."
+repo = "https://git.sr.ht/~averagechris/ctx"
+
+[[projects]]
+path = "gander"
+name = "gander"
+description = "Take a gander at your jj changes: a fast review TUI with durable viewed-state, comments, and exportable review artifacts."
+repo = "https://git.sr.ht/~averagechris/gander"

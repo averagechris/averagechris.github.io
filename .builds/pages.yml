@@ -1,0 +1,12 @@
+image: nixos/unstable
+arch: x86_64
+oauth: pages.sr.ht/PAGES:RW
+environment:
+  NIX_CONFIG: "experimental-features = nix-command flakes"
+sources:
+  - https://git.sr.ht/~averagechris/averagechris.srht.site
+tasks:
+  - publish: |
+      cd averagechris.srht.site
+      nix run .#build-pages
+      nix run .#publish-pages
