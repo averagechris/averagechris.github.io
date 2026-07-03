@@ -121,6 +121,25 @@ def check_repo(entry: dict, config: dict, use_nix: bool) -> list[tuple[str, str]
     return results
 
 
+def check_host() -> list[tuple[str, str]]:
+    """Host-level health checks shared by every fleet repo."""
+    results: list[tuple[str, str]] = []
+    if run(["sccache", "--version"]) is None:
+        results.append(("warn", "sccache not on PATH (RUSTC_WRAPPER builds will fail)"))
+        return results
+    if run(["sccache", "cc", "--version"]) is None:
+        results.append(
+            (
+                "fail",
+                "sccache cannot drive the C compiler (poisoned server daemon?); "
+                "run `sccache --stop-server` and re-check",
+            )
+        )
+    else:
+        results.append(("ok", "sccache compiles C (server healthy)"))
+    return results
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--nix", action="store_true", help="also verify required flake apps (slower)")
@@ -132,6 +151,10 @@ def main() -> None:
 
     color = {"ok": GREEN, "warn": YELLOW, "fail": RED}
     worst = 0
+    print("host")
+    for level, message in check_host():
+        print(f"  {color[level]}{level:4}{RESET}  {message}")
+        worst = max(worst, {"ok": 0, "warn": 1, "fail": 2}[level])
     for entry in config["repos"]:
         if args.repo and entry["name"] not in args.repo:
             continue

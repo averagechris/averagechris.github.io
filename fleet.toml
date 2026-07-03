@@ -91,6 +91,6 @@ artifact_prefix = "gander"
 quirks = [
   "owner often has active work in the default workspace — ALWAYS use a jj workspace",
   "jj lint has 13 gates (audit, deny, machete, sort, taplo, alejandra, statix, deadnix, typos, ...)",
-  "ci wrappers unset RUSTC_WRAPPER and pin CC (host sccache breaks cc-rs builds in fresh workspaces)",
+  "ci wrappers pin CC/CXX to nix stdenv cc and keep RUSTC_WRAPPER (sccache) active",
   "byte-reproducible release tarballs are documented behavior — preserve",
 ]

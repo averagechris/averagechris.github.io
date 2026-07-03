@@ -49,9 +49,13 @@ safety rules:
   merges, and releases.
 - Pass along relevant quirks from `fleet.toml` and the repo's own AGENTS.md
   policies (e.g. linear-cli/slack-rs/ctx fork exclusions).
-- Host quirk: the global env sets `RUSTC_WRAPPER=sccache`, which breaks cc-rs
-  builds in fresh workspaces outside `nix develop`. Workaround:
-  `RUSTC_WRAPPER='' ...` (gander's ci wrappers already unset it).
+- Host quirk: `RUSTC_WRAPPER=sccache` is set globally and MUST stay working
+  (shared compile cache keeps the disk from filling with per-project target
+  artifacts). Never "fix" build failures by unsetting it. If C-dep builds fail
+  with `sccache: ... Compiler not supported: "error: tool 'clang' not found"`,
+  the sccache server daemon was started from a poisoned environment — run
+  `sccache --stop-server` and retry (the supervised `sccache-server` launchd
+  agent from dotfiles restarts a healthy one). `fleet-status` checks this.
 - Validation floor before a subagent reports done: `nix flake show`,
   `nix run .#ci-fmt|ci-clippy|ci-test`, and `nix flake check` where defined.
 
