@@ -29,6 +29,8 @@ def main() -> None:
     parser.add_argument("--name", default=None, help="display name (default: same as path)")
     parser.add_argument("--repo", default=None, help="source repo URL (default: git.sr.ht/~averagechris/<path>)")
     parser.add_argument("--unlisted", action="store_true", help="mirror the subdirectory but do not show a card")
+    parser.add_argument("--no-downloads", action="store_true", help="project has no downloads page; link source only")
+    parser.add_argument("--tier", choices=["featured", "more"], default="featured", help="featured card or compact 'more projects' list")
     args = parser.parse_args()
 
     path = args.path.strip("/")
@@ -53,6 +55,10 @@ def main() -> None:
     ]
     if args.unlisted:
         lines.append("listed = false")
+    if args.no_downloads:
+        lines.append("downloads = false")
+    if args.tier != "featured":
+        lines.append(f"tier = {toml_string(args.tier)}")
 
     with config_path.open("a") as handle:
         handle.write("\n".join(lines) + "\n")

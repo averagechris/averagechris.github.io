@@ -97,16 +97,28 @@ def mirror_project(base_url: str, path: str, site_dir: pathlib.Path) -> bool:
 def render_index(config: dict, base_url: str, published: dict[str, bool]) -> str:
     site = config["site"]
     cards: list[str] = []
+    more_items: list[str] = []
     for project in config["projects"]:
         if not project.get("listed", True):
             continue
         name = html.escape(project["name"])
         description = html.escape(project["description"])
-        downloads_url = html.escape(f"{base_url}/{project['path']}/")
         repo_url = html.escape(project["repo"])
-        links = [f'<a class="primary-link" href="{downloads_url}">downloads</a>']
-        if published.get(project["path"]) is False:
-            links = ['<span class="pending">no release yet</span>']
+        has_downloads = project.get("downloads", True)
+
+        if project.get("tier", "featured") == "more":
+            more_items.append(
+                f'    <li><a href="{repo_url}">{name}</a> &mdash; {description}</li>'
+            )
+            continue
+
+        links = []
+        if has_downloads:
+            downloads_url = html.escape(f"{base_url}/{project['path']}/")
+            if published.get(project["path"]) is False:
+                links.append('<span class="pending">no release yet</span>')
+            else:
+                links.append(f'<a class="primary-link" href="{downloads_url}">downloads</a>')
         links.append(f'<a href="{repo_url}">source</a>')
         cards.append(
             "\n".join(
@@ -118,6 +130,14 @@ def render_index(config: dict, base_url: str, published: dict[str, bool]) -> str
                     "    </article>",
                 )
             )
+        )
+
+    more_section = ""
+    if more_items:
+        more_section = (
+            "\n  <h2>More projects</h2>\n  <ul class=\"more-projects\">\n"
+            + "\n".join(more_items)
+            + "\n  </ul>\n"
         )
 
     profile_links = " ".join(
@@ -147,6 +167,8 @@ def render_index(config: dict, base_url: str, published: dict[str, bool]) -> str
     .project-links {{ display: flex; flex-wrap: wrap; gap: 0.75rem; }}
     .primary-link {{ font-weight: 700; }}
     .pending {{ color: #777; }}
+    .more-projects {{ padding-left: 1.25rem; }}
+    .more-projects li {{ margin-bottom: 0.5rem; }}
     footer {{ color: #555; font-size: 0.85rem; margin-top: 3rem; }}
   </style>
 </head>
@@ -162,7 +184,7 @@ def render_index(config: dict, base_url: str, published: dict[str, bool]) -> str
   <section class="projects">
 {chr(10).join(cards)}
   </section>
-
+{more_section}
   <footer>
     <p>Each project page hosts prebuilt binaries with sha256 checksums.
     Source for this page: <a href="https://git.sr.ht/~averagechris/averagechris.srht.site">averagechris.srht.site</a>.</p>
@@ -200,6 +222,8 @@ def main() -> None:
     else:
         print(f"mirroring live site from {base_url}")
         for project in config["projects"]:
+            if not project.get("downloads", True):
+                continue
             published[project["path"]] = mirror_project(base_url, project["path"], site_dir)
 
     (site_dir / "index.html").write_text(render_index(config, base_url, published))

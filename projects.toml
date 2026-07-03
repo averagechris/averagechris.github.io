@@ -1,7 +1,15 @@
 # Projects listed on https://averagechris.srht.site/
 #
-# Each [[projects]] entry renders a card on the homepage and tells the
-# site builder which subdirectory to mirror when republishing the root.
+# Each [[projects]] entry renders on the homepage and (when it has a
+# downloads page) tells the site builder which subdirectory to mirror when
+# republishing the root.
+#
+# Fields:
+#   path        subdirectory under the site root / stable identifier
+#   downloads   default true; false = no downloads page (card links source only,
+#               nothing is mirrored for it)
+#   tier        "featured" (default, card) or "more" (compact list)
+#   listed      default true; false = mirror the subdirectory but show nothing
 #
 # IMPORTANT: every subdirectory ever published to this Pages site MUST be
 # listed here (even with `listed = false`), because a root publish replaces
@@ -56,3 +64,34 @@ path = "gander"
 name = "gander"
 description = "Take a gander at your jj changes: a fast review TUI with durable viewed-state, comments, and exportable review artifacts."
 repo = "https://git.sr.ht/~averagechris/gander"
+
+[[projects]]
+path = "dotfiles"
+name = "dotfiles"
+description = "My system configuration, fully consumed by Nix: a NixOS + nix-darwin multi-machine flake."
+repo = "https://git.sr.ht/~averagechris/dotfiles"
+downloads = false
+
+[[projects]]
+path = "starship-jj"
+name = "starship-jj"
+description = "Starship prompt module for Jujutsu; fork with performance improvements."
+repo = "https://git.sr.ht/~averagechris/starship-jj"
+downloads = false
+tier = "more"
+
+[[projects]]
+path = "goodbot"
+name = "goodbot"
+description = "Plugin-first, Telegram-first, local-first assistant runtime in Rust."
+repo = "https://git.sr.ht/~averagechris/goodbot"
+downloads = false
+tier = "more"
+
+[[projects]]
+path = "nix-openclaw"
+name = "nix-openclaw"
+description = "Declarative OpenClaw via Nix; fork with extra features and fixes."
+repo = "https://git.sr.ht/~averagechris/nix-openclaw"
+downloads = false
+tier = "more"

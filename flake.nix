@@ -60,6 +60,11 @@
             exec python3 scripts/add_project.py "$@"
           '';
 
+          fleet-status = mkApp "fleet-status" ''
+            ${repoScripts}
+            exec python3 scripts/fleet_status.py "$@"
+          '';
+
           serve = mkApp "serve" ''
             ${repoScripts}
             if [[ ! -d dist/site ]]; then
