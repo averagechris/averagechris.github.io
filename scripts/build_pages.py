@@ -75,6 +75,13 @@ STYLE = """\
   a { color: var(--pine); text-decoration-color: color-mix(in srgb, var(--pine) 40%, transparent); }
   a:hover { color: var(--rose); }
   .masthead { display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem; }
+  .identity { display: flex; align-items: center; gap: 1.15rem; }
+  .portrait {
+    width: 88px; height: 88px; border-radius: 50%; object-fit: cover;
+    border: 2px solid var(--hl-med);
+    box-shadow: 2px 2px 0 var(--hl-med);
+    flex-shrink: 0;
+  }
   h1 { font-size: 2.4rem; margin: 0; font-weight: 700; letter-spacing: -0.01em; }
   h1 small { color: var(--muted); font-weight: 400; font-size: 1.2rem; font-style: italic; }
   .tagline { color: var(--subtle); font-style: italic; margin: 0.25rem 0 0; }
@@ -306,6 +313,14 @@ def render_index(config: dict, base_url: str, published: dict[str, bool]) -> str
     tagline = ""
     if site.get("tagline"):
         tagline = f'\n        <p class="tagline">{html.escape(site["tagline"])}</p>'
+    portrait = ""
+    if site.get("portrait"):
+        portrait_src = html.escape(site["portrait"])
+        portrait_alt = html.escape(site["name"])
+        portrait = (
+            f'\n      <img class="portrait" src="{portrait_src}" alt="{portrait_alt}"'
+            ' width="88" height="88">'
+        )
 
     return f"""<!doctype html>
 <html lang="en">
@@ -321,8 +336,10 @@ def render_index(config: dict, base_url: str, published: dict[str, bool]) -> str
 <body>
   <header>
     <div class="masthead">
+      <div class="identity">{portrait}
       <div>
         <h1>{html.escape(site["name"])} <small>{html.escape(site["title"])}</small></h1>{tagline}
+      </div>
       </div>
       <button class="theme-toggle" id="theme-toggle" aria-label="toggle color theme">dawn &frasl; moon</button>
     </div>
@@ -382,6 +399,12 @@ def main() -> None:
             published[project["path"]] = mirror_project(base_url, project["path"], site_dir)
 
     (site_dir / "index.html").write_text(render_index(config, base_url, published))
+
+    assets_dir = repo / "assets"
+    if assets_dir.is_dir():
+        for asset in sorted(assets_dir.iterdir()):
+            if asset.is_file():
+                shutil.copy2(asset, site_dir / asset.name)
 
     tarball = out_dir / "pages.tar.gz"
     with tarfile.open(tarball, "w:gz") as archive:
