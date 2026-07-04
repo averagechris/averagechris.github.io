@@ -83,6 +83,21 @@ quirks = [
 ]
 
 [[repos]]
+name = "starship-jj"
+local = "/Users/chris/projects/starship-jj"
+pages_subdir = "starship-jj"
+version_file = "Cargo.toml"
+artifact_prefix = "starship-jj"
+upstream = "https://gitlab.com/lanastara_foss/starship-jj.git"
+quirks = [
+  "fork: trunk() may resolve to main@upstream (gitlab) — verify against local main bookmark",
+  "legacy unprefixed upstream tags 0.5.0–0.7.0 exist; fork tags are vX.Y.Z",
+  "uses nixfmt (not alejandra) for nix formatting; fenix toolchain for ci apps",
+  "in-repo PREVIEW_ONLY guard: build-pages without --include-existing-downloads marks dist unpublishable",
+  "upstream review cutoff tracked in AGENTS.md (8ca6a957 as of 2026-03-17)",
+]
+
+[[repos]]
 name = "gander"
 local = "/Users/chris/projects/gander"
 pages_subdir = "gander"

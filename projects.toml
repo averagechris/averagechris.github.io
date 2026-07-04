@@ -80,8 +80,6 @@ path = "starship-jj"
 name = "starship-jj"
 description = "Starship prompt module for Jujutsu; fork with performance improvements."
 repo = "https://git.sr.ht/~averagechris/starship-jj"
-downloads = false
-tier = "more"
 
 [[projects]]
 path = "goodbot"
