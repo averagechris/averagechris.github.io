@@ -9,4 +9,3 @@ tasks:
   - refresh: |
       cd averagechris.srht.site
       nix run .#refresh-pages
-cron: "0 * * * *"
