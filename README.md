@@ -46,7 +46,10 @@ nix run .#serve            # http://localhost:8000
 nix run .#publish-pages
 ```
 
-Pushing to this repo also republishes the site via `.builds/pages.yml`.
+Pushing to this repo also republishes the site via `.builds/pages.yml`. An
+hourly `.builds/refresh-pages.yml` job runs `nix run .#refresh-pages`, which
+does a metadata-only check of the live project manifests and publishes only if
+the generated homepage/tools pages differ from the live site.
 
 ## Files
 
