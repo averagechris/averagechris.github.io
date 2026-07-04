@@ -70,7 +70,11 @@ def check_repo(entry: dict, config: dict, use_nix: bool) -> list[tuple[str, str]
     version_file = repo / entry["version_file"]
     version = None
     if version_file.exists():
-        version = tomllib.loads(version_file.read_text())["package"]["version"]
+        manifest = tomllib.loads(version_file.read_text())
+        package = manifest.get("package") or manifest.get("workspace", {}).get("package") or {}
+        version = package.get("version")
+        if version is None:
+            results.append(("fail", f"no package version in {entry['version_file']}"))
     else:
         results.append(("fail", f"version file {entry['version_file']} missing"))
     tag = latest_tag(repo)
