@@ -10,6 +10,7 @@
 #               nothing is mirrored for it)
 #   tier        "featured" (default, card) or "more" (compact list)
 #   listed      default true; false = mirror the subdirectory but show nothing
+#   extra_links optional links rendered after source, e.g. [{ label = "uses", url = "/uses/" }]
 #
 # IMPORTANT: every subdirectory ever published to this Pages site MUST be
 # listed here (even with `listed = false`), because a root publish replaces
@@ -74,6 +75,7 @@ name = "dotfiles"
 description = "My system configuration, fully consumed by Nix: a NixOS + nix-darwin multi-machine flake."
 repo = "https://git.sr.ht/~averagechris/dotfiles"
 downloads = false
+extra_links = [{ label = "uses", url = "/uses/" }]
 
 [[projects]]
 path = "starship-jj"

@@ -10,18 +10,19 @@
     flake-utils.lib.eachDefaultSystem (system:
       let
         pkgs = nixpkgs.legacyPackages.${system};
+        python = pkgs.python3.withPackages (ps: [ ps.markdown ]);
 
         mkApp = name: script: {
           type = "app";
           program = pkgs.lib.getExe (pkgs.writeShellApplication {
             inherit name;
-            runtimeInputs = [ pkgs.python3 pkgs.hut ];
+            runtimeInputs = [ python pkgs.hut ];
             text = script;
           });
         };
 
         repoScripts = ''
-          repo_root="$(git rev-parse --show-toplevel)"
+          repo_root="$(git rev-parse --show-toplevel 2>/dev/null || jj root)"
           cd "$repo_root"
         '';
       in
@@ -52,7 +53,11 @@
               printf 'rebuild with: nix run .#build-pages\n' >&2
               exit 1
             fi
-            exec hut pages publish "$tarball" --domain "$domain"
+            site_config_args=()
+            if [[ -f dist/siteconfig.json ]]; then
+              site_config_args=(--site-config dist/siteconfig.json)
+            fi
+            exec hut pages publish "$tarball" --domain "$domain" "''${site_config_args[@]}"
           '';
 
           add-project = mkApp "add-project" ''
@@ -76,7 +81,7 @@
         };
 
         devShells.default = pkgs.mkShell {
-          packages = [ pkgs.python3 pkgs.hut ];
+          packages = [ python pkgs.hut ];
         };
 
         formatter = pkgs.nixfmt-rfc-style;

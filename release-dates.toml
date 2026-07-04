@@ -1,0 +1,9 @@
+# Cache of release tag dates, updated automatically by build-pages when
+# local fleet repos are available. Safe to commit; CI reads it as-is.
+[dates]
+"ctx/v1.0.1" = "2026-07-03"
+"gander/v0.3.0" = "2026-07-03"
+"granola-cli/v0.8.1" = "2026-06-30"
+"linear-cli/v1.6.1" = "2026-07-03"
+"slack/v0.3.0" = "2026-07-03"
+"starship-jj/v1.0.0" = "2026-07-03"

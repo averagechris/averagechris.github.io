@@ -1,24 +1,23 @@
 #!/usr/bin/env python3
-"""Build the averagechris.srht.site root site tarball.
+"""Build the averagechris.srht.site root Pages tarball.
 
-SourceHut Pages replaces the ENTIRE site on a root publish, so this script:
-
-1. Mirrors every project subdirectory listed in projects.toml from the live
-   site (index.html, manifest.json, and every file linked from the page).
-2. Generates a fresh index.html at the site root.
-3. Packs everything into a gzipped tarball ready for `hut pages publish`.
-
-Usage:
-    build_pages.py [--domain DOMAIN] [--skip-mirror] [--out DIR]
+The builder mirrors release subdirectories, reads their release manifests at
+build time, generates the homepage plus root-owned pages (content markdown,
+/tools/, 404.html), writes SourceHut siteconfig.json, and packs dist/site into
+dist/pages.tar.gz. Root publishes replace the entire site, so projects.toml is
+still the registry of mirrored project subdirectories.
 """
 
 from __future__ import annotations
 
 import argparse
+import datetime as dt
 import html
+import json
 import pathlib
 import re
 import shutil
+import subprocess
 import sys
 import tarfile
 import tomllib
@@ -26,8 +25,18 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
+import markdown
+
 HREF_RE = re.compile(r'href="([^"]+)"')
+ARTIFACT_RE = re.compile(
+    r"(.+)-(?P<version>v\d+\.\d+\.\d+)-"
+    r"(?P<arch>x86_64|aarch64)-(?P<os>linux|darwin)\.tar\.gz$"
+)
 EXTRA_SUBTREE_FILES = ("manifest.json",)
+RELEASE_DATES_HEADER = """# Cache of release tag dates, updated automatically by build-pages when
+# local fleet repos are available. Safe to commit; CI reads it as-is.
+[dates]
+"""
 
 # Rosé Pine Dawn (light) / Rosé Pine Moon (dark). SourceHut Pages' CSP allows
 # inline styles/scripts but blocks external stylesheets, fonts, and scripts,
@@ -93,8 +102,10 @@ STYLE = """\
     flex-shrink: 0; margin-top: 0.5rem;
   }
   .theme-toggle:hover { border-color: var(--rose); color: var(--text); }
-  .profile-links { display: flex; gap: 1.25rem; margin: 1rem 0 0; font-size: 0.95rem; }
+  .profile-links { display: flex; gap: 1.25rem; margin: 1rem 0 0; font-size: 0.95rem; flex-wrap: wrap; }
   .about { max-width: 62ch; margin-top: 1.75rem; font-size: 1.08rem; }
+  .muted { color: var(--muted); }
+  .mono { font-family: ui-monospace, Menlo, monospace; }
   .divider { border: none; border-top: 1px solid var(--hl-med); margin: 2.5rem 0; position: relative; overflow: visible; }
   .divider::after {
     content: "\\2766"; position: absolute; top: -0.85em; left: 50%; transform: translateX(-50%);
@@ -102,11 +113,8 @@ STYLE = """\
     line-height: 1.7; transition: background 0.25s ease;
   }
   h2 { font-size: 1.5rem; margin: 0 0 1.25rem; font-weight: 700; }
-  .projects {
-    display: grid; gap: 1.1rem;
-    grid-template-columns: repeat(auto-fit, minmax(270px, 1fr));
-    padding: 0;
-  }
+  h3 { margin-top: 1.6rem; }
+  .projects { display: grid; gap: 1.1rem; grid-template-columns: repeat(auto-fit, minmax(270px, 1fr)); padding: 0; }
   .project {
     background: var(--surface);
     border: 1px solid var(--hl-med);
@@ -116,23 +124,36 @@ STYLE = """\
     transition: box-shadow 0.15s ease, transform 0.15s ease, background 0.25s ease;
   }
   .project:hover { transform: translate(-1px, -1px); box-shadow: 4px 4px 0 var(--hl-med); }
-  .project h3 {
-    margin: 0 0 0.5rem; font-size: 1.15rem;
-    font-family: ui-monospace, Menlo, monospace; font-weight: 600;
-  }
+  .project h3 { margin: 0 0 0.5rem; font-size: 1.15rem; font-family: ui-monospace, Menlo, monospace; font-weight: 600; }
   .version {
     float: right; font-family: ui-monospace, Menlo, monospace;
     font-size: 0.72rem; background: var(--overlay); color: var(--foam);
     padding: 0.12rem 0.55rem; border-radius: 3px; margin-top: 0.25rem; margin-left: 0.5rem;
   }
   .project p { margin: 0 0 0.9rem; font-size: 0.95rem; color: var(--subtle); }
-  .project-links { display: flex; gap: 1.1rem; font-size: 0.9rem; font-family: ui-monospace, Menlo, monospace; }
+  .project-links { display: flex; gap: 1.1rem; font-size: 0.9rem; font-family: ui-monospace, Menlo, monospace; flex-wrap: wrap; }
   .project-links a.primary-link { font-weight: 700; }
   .pending { color: var(--muted); font-style: italic; }
   .more-projects { padding-left: 1.4rem; }
   .more-projects li { margin-bottom: 0.55rem; color: var(--subtle); }
   .more-projects li::marker { content: "\\273F  "; color: var(--love); }
   .more-projects a { font-family: ui-monospace, Menlo, monospace; font-size: 0.92rem; }
+  details.install { margin-top: 0.8rem; }
+  details.install summary { cursor: pointer; color: var(--pine); font-family: ui-monospace, Menlo, monospace; font-size: 0.88rem; }
+  .code-line, pre { background: var(--overlay); border: 1px solid var(--hl-med); border-radius: 4px; overflow-x: auto; }
+  .code-line { display: flex; gap: 0.5rem; align-items: start; margin: 0.45rem 0; padding: 0.45rem; }
+  .code-line code, pre code { font-family: ui-monospace, Menlo, monospace; font-size: 0.78rem; white-space: pre; }
+  .copy { background: var(--surface); border: 1px solid var(--hl-med); color: var(--subtle); border-radius: 3px; font-size: 0.72rem; cursor: pointer; }
+  .copy:hover { color: var(--text); border-color: var(--rose); }
+  .content { max-width: 70ch; }
+  .content pre { padding: 0.8rem; }
+  .content code { background: var(--overlay); border-radius: 3px; padding: 0.05rem 0.2rem; }
+  .content pre code { padding: 0; background: transparent; }
+  .content h2 { margin-top: 2rem; border-bottom: 1px solid var(--hl-med); padding-bottom: 0.25rem; }
+  .content h3 { color: var(--subtle); }
+  .content li { margin: 0.35rem 0; }
+  .tool { border-top: 1px solid var(--hl-med); padding-top: 1.2rem; margin-top: 1.2rem; }
+  .tool h2 { margin-bottom: 0.3rem; }
   footer { color: var(--muted); font-size: 0.88rem; margin-top: 3.5rem; font-style: italic; text-align: center; }
 """
 
@@ -157,72 +178,56 @@ BODY_SCRIPT = """\
     try { stored = localStorage.getItem("theme"); } catch (e) {}
     if (!stored) document.documentElement.dataset.theme = event.matches ? "moon" : "dawn";
   });
-
-  // Latest-version badges from each project's same-origin manifest.json.
-  // Best effort: any failure just means no badge.
-  function parseVersion(name) {
-    var m = /v(\\d+)\\.(\\d+)\\.(\\d+)/.exec(name);
-    return m ? [+m[1], +m[2], +m[3]] : null;
-  }
-  function newer(a, b) {
-    for (var i = 0; i < 3; i++) if (a[i] !== b[i]) return a[i] > b[i];
-    return false;
-  }
-  document.querySelectorAll(".project[data-project]").forEach(function (card) {
-    fetch("/" + card.dataset.project + "/manifest.json")
-      .then(function (r) { return r.ok ? r.json() : null; })
-      .then(function (manifest) {
-        if (!manifest || !Array.isArray(manifest.artifacts)) return;
-        var best = null;
-        manifest.artifacts.forEach(function (artifact) {
-          var v = parseVersion(artifact.name || "");
-          if (v && (!best || newer(v, best))) best = v;
-        });
-        if (!best) return;
-        var badge = document.createElement("span");
-        badge.className = "version";
-        badge.textContent = "v" + best.join(".");
-        card.insertBefore(badge, card.firstElementChild);
-      })
-      .catch(function () {});
+  document.addEventListener("click", function (event) {
+    var button = event.target.closest("button.copy");
+    if (!button) return;
+    var text = button.dataset.copy || "";
+    function done() {
+      var old = button.textContent;
+      button.textContent = "copied";
+      setTimeout(function () { button.textContent = old; }, 1200);
+    }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(done).catch(function () {});
+    }
   });
 """
+
+def esc(value: object) -> str:
+    return html.escape(str(value), quote=True)
 
 
 def fail(message: str) -> "sys.NoReturn":
     raise SystemExit(f"error: {message}")
 
-
-def fetch(url: str) -> bytes | None:
-    """Fetch a URL, returning None on 404 and failing hard on anything else."""
+def fetch(url: str, *, soft: bool = False) -> bytes | None:
     try:
         with urllib.request.urlopen(url, timeout=60) as response:
             return response.read()
     except urllib.error.HTTPError as error:
-        if error.code == 404:
+        if error.code == 404 or soft:
             return None
         fail(f"fetching {url}: HTTP {error.code}")
     except urllib.error.URLError as error:
+        if soft:
+            return None
         fail(f"fetching {url}: {error}")
 
 
 def subtree_files_from_page(page_html: str) -> set[str]:
-    """Extract relative file paths within a project subtree from its index page."""
-    files: set[str] = set()
+    files = set()
     for href in HREF_RE.findall(page_html):
         parsed = urllib.parse.urlparse(href)
         if parsed.scheme or parsed.netloc or href.startswith(("/", "#")):
             continue
         candidate = urllib.parse.unquote(parsed.path)
         normalized = pathlib.PurePosixPath(candidate)
-        if not candidate or candidate.endswith("/") or ".." in normalized.parts:
-            continue
-        files.add(str(normalized))
+        if candidate and not candidate.endswith("/") and ".." not in normalized.parts:
+            files.add(str(normalized))
     return files
 
 
 def mirror_project(base_url: str, path: str, site_dir: pathlib.Path) -> bool:
-    """Mirror one project subtree from the live site. Returns True if mirrored."""
     project_url = f"{base_url}/{path}"
     index_bytes = fetch(f"{project_url}/index.html") or fetch(f"{project_url}/")
     if index_bytes is None:
@@ -236,33 +241,278 @@ def mirror_project(base_url: str, path: str, site_dir: pathlib.Path) -> bool:
     files = subtree_files_from_page(index_bytes.decode("utf-8", errors="replace"))
     files.update(EXTRA_SUBTREE_FILES)
     files.discard("index.html")
-
     fetched = 0
     for relative in sorted(files):
         content = fetch(f"{project_url}/{urllib.parse.quote(relative)}")
         if content is None:
             if relative in EXTRA_SUBTREE_FILES:
                 continue
-            fail(f"{path}: linked file {relative} returned 404; refusing to publish an incomplete mirror")
+            fail(f"{path}: linked file {relative} returned 404; refusing incomplete mirror")
         destination = project_dir / relative
         destination.parent.mkdir(parents=True, exist_ok=True)
         destination.write_bytes(content)
         fetched += 1
-
     print(f"  {path}: mirrored index.html + {fetched} files")
     return True
 
 
-def render_index(config: dict, base_url: str, published: dict[str, bool]) -> str:
+def read_json(path: pathlib.Path) -> dict | None:
+    try:
+        return json.loads(path.read_text())
+    except Exception:
+        return None
+
+
+def parse_manifest(manifest: dict | None) -> dict | None:
+    if not manifest:
+        return None
+    artifacts = [a for a in manifest.get("artifacts", []) if isinstance(a, dict)]
+    version = manifest.get("version") or None
+    if not version:
+        versions = [
+            match.group("version")
+            for artifact in artifacts
+            if (match := ARTIFACT_RE.match(str(artifact.get("name", ""))))
+        ]
+        version = sorted(set(versions))[-1] if versions else None
+    if not version:
+        return None
+    current = []
+    for artifact in artifacts:
+        name = str(artifact.get("name", ""))
+        match = ARTIFACT_RE.match(name)
+        if not match or match.group("version") != version:
+            continue
+        os_name = "macos" if match.group("os") == "darwin" else match.group("os")
+        arch = (
+            "arm64"
+            if match.group("arch") == "aarch64" and os_name == "macos"
+            else match.group("arch")
+        )
+        current.append(
+            {
+                "name": name,
+                "url": str(artifact.get("url", "")),
+                "sha256": str(artifact.get("sha256", "")),
+                "label": f"{os_name} {arch}",
+            }
+        )
+    return {
+        "version": version,
+        "artifacts": current,
+        "platforms": [artifact["label"] for artifact in current],
+    }
+
+
+def collect_metadata(config: dict, base_url: str, site_dir: pathlib.Path, skip_mirror: bool) -> dict[str, dict]:
+    meta = {}
+    for project in config["projects"]:
+        if not project.get("downloads", True):
+            continue
+        raw = None
+        if skip_mirror:
+            data = fetch(f"{base_url}/{project['path']}/manifest.json", soft=True)
+            raw = json.loads(data) if data else None
+        else:
+            raw = read_json(site_dir / project["path"] / "manifest.json")
+        parsed = parse_manifest(raw)
+        if parsed:
+            meta[project["path"]] = parsed
+    return meta
+
+
+def load_release_dates(repo: pathlib.Path) -> dict[str, str]:
+    path = repo / "release-dates.toml"
+    if not path.exists():
+        return {}
+    return dict(tomllib.loads(path.read_text()).get("dates", {}))
+
+
+def fleet_by_subdir(repo: pathlib.Path) -> dict[str, str]:
+    path = repo / "fleet.toml"
+    if not path.exists():
+        return {}
+    return {
+        r["pages_subdir"]: r["local"]
+        for r in tomllib.loads(path.read_text()).get("repos", [])
+        if r.get("pages_subdir") and r.get("local")
+    }
+
+
+def update_release_dates(repo: pathlib.Path, meta: dict[str, dict]) -> dict[str, str]:
+    dates = load_release_dates(repo)
+    fleet = fleet_by_subdir(repo)
+    changed = False
+    for subdir, m in meta.items():
+        key = f"{subdir}/{m['version']}"
+        if key in dates or subdir not in fleet:
+            continue
+        result = subprocess.run(
+            ["git", "-C", fleet[subdir], "log", "-1", "--format=%cs", f"refs/tags/{m['version']}"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            text=True,
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            dates[key] = result.stdout.strip()
+            changed = True
+    if changed:
+        body = RELEASE_DATES_HEADER + "".join(f'"{k}" = "{dates[k]}"\n' for k in sorted(dates))
+        (repo / "release-dates.toml").write_text(body)
+        print("updated release-dates.toml with learned tag dates; commit it with this change")
+    return dates
+
+def content_files(repo: pathlib.Path) -> list[pathlib.Path]:
+    root = repo / "content"
+    if not root.is_dir():
+        return []
+    return sorted(root.glob("*.md"))
+
+
+def public_content_files(repo: pathlib.Path) -> list[pathlib.Path]:
+    return [path for path in content_files(repo) if path.stem != "now"]
+
+
+def markdown_title(text: str, fallback: str) -> tuple[str, str]:
+    lines = text.splitlines()
+    if lines and lines[0].startswith("# "):
+        return lines[0][2:].strip(), "\n".join(lines[1:]).lstrip("\n")
+    return fallback, text
+
+
+def md_to_html(text: str) -> str:
+    return markdown.markdown(text, extensions=["fenced_code", "tables"])
+
+
+def site_description(site: dict) -> str:
+    return site.get("description") or site.get("about", "").strip().split(".")[0] + "."
+
+
+def head(title: str, desc: str, url: str, site: dict, *, image: bool = False) -> str:
+    image_tag = ""
+    if image:
+        image_url = url.rsplit("/", 1)[0] + "/" + site.get("portrait", "portrait.jpg")
+        image_tag = f'\n  <meta property="og:image" content="{esc(image_url)}">'
+    return f"""<meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="{esc(desc)}">
+  <link rel="canonical" href="{esc(url)}">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <meta property="og:title" content="{esc(title)}">
+  <meta property="og:description" content="{esc(desc)}">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="{esc(url)}">{image_tag}
+  <title>{esc(title)}</title>
+  <script>\n{HEAD_SCRIPT}  </script>
+  <style>\n{STYLE}  </style>"""
+
+
+def page_chrome(title: str, desc: str, url: str, site: dict, body: str, *, home: bool = False) -> str:
+    masthead = ""
+    if not home:
+        masthead = """
+  <header>
+    <div class="masthead">
+      <h1><a href="/">~averagechris</a></h1>
+      <button class="theme-toggle" id="theme-toggle" aria-label="toggle color theme">dawn &frasl; moon</button>
+    </div>
+  </header>
+  <hr class="divider">
+"""
+
+    return f"""<!doctype html>
+<html lang="en">
+<head>
+  {head(title, desc, url, site, image=home)}
+</head>
+<body>{masthead}
+{body}
+  <footer>
+    <p>Source for this page: <a href="https://git.sr.ht/~averagechris/averagechris.srht.site">averagechris.srht.site</a>.</p>
+  </footer>
+  <script>
+{BODY_SCRIPT}  </script>
+</body>
+</html>
+"""
+
+
+def code_line(text: str) -> str:
+    return (
+        '<div class="code-line">'
+        f'<button class="copy" data-copy="{esc(text)}">copy</button>'
+        f"<code>{esc(text)}</code>"
+        "</div>"
+    )
+
+
+def install_details(artifacts: list[dict], verified: bool = False) -> str:
+    rows = []
+    for artifact in artifacts:
+        command = f"curl -fsSL {artifact['url']} | tar xz"
+        if verified:
+            command = (
+                f"curl -fsSLO {artifact['url']}\n"
+                f"echo \"{artifact['sha256']}  {artifact['name']}\" | shasum -a 256 -c\n"
+                f"tar xzf {artifact['name']}"
+            )
+        rows.append(f'<p class="muted mono">{esc(artifact["label"])}</p>{code_line(command)}')
+    return "".join(rows)
+
+
+def version_bits(path: str, meta: dict[str, dict], dates: dict[str, str]) -> tuple[str, str, list[str]]:
+    m = meta.get(path) or {}
+    version = m.get("version")
+    date = dates.get(f"{path}/{version}") if version else None
+    badge = f'<span class="version">{esc(version)}</span>' if version else ""
+    date_text = date or ""
+    platforms = list(m.get("platforms", []))
+    return badge, date_text, platforms
+
+
+def card_meta_line(platforms: list[str], date: str) -> str:
+    if platforms:
+        text = " · ".join(platforms)
+        if date:
+            text = f"{text} — {date}"
+        return f'<p class="mono muted">{esc(text)}</p>'
+    if date:
+        return f'<p class="mono muted">{esc(date)}</p>'
+    return ""
+
+def now_section(repo: pathlib.Path) -> str:
+    path = repo / "content" / "now.md"
+    if not path.exists():
+        return ""
+    title, body = markdown_title(path.read_text(), "Now")
+    result = subprocess.run(
+        ["git", "log", "-1", "--format=%cs", "--", str(path.relative_to(repo))],
+        cwd=repo,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+        text=True,
+    )
+    if result.returncode == 0 and result.stdout.strip():
+        date = result.stdout.strip()
+    else:
+        date = dt.date.fromtimestamp(path.stat().st_mtime).isoformat()
+    return f"""
+  <section class="content">
+    <h2>Now</h2>
+    <p class="muted">updated {esc(date)}</p>
+{md_to_html(body)}
+  </section>"""
+
+def render_index(repo: pathlib.Path, config: dict, base_url: str, published: dict[str, bool], meta: dict[str, dict], dates: dict[str, str]) -> str:
     site = config["site"]
-    cards: list[str] = []
-    more_items: list[str] = []
+    cards = []
+    more_items = []
     for project in config["projects"]:
         if not project.get("listed", True):
             continue
-        name = html.escape(project["name"])
-        description = html.escape(project["description"])
-        repo_url = html.escape(project["repo"])
+        name = esc(project["name"])
+        description = esc(project["description"])
+        repo_url = esc(project["repo"])
         has_downloads = project.get("downloads", True)
 
         if project.get("tier", "featured") == "more":
@@ -272,73 +522,77 @@ def render_index(config: dict, base_url: str, published: dict[str, bool]) -> str
             continue
 
         links = []
-        data_attr = ""
         if has_downloads:
-            downloads_url = html.escape(f"{base_url}/{project['path']}/")
             if published.get(project["path"]) is False:
                 links.append('<span class="pending">no release yet</span>')
             else:
+                downloads_url = esc(base_url + "/" + project["path"] + "/")
                 links.append(f'<a class="primary-link" href="{downloads_url}">downloads</a>')
-                data_attr = f' data-project="{html.escape(project["path"])}"'
         links.append(f'<a href="{repo_url}">source</a>')
-        cards.append(
-            "\n".join(
-                (
-                    f'    <article class="project"{data_attr}>',
-                    f"      <h3>{name}</h3>",
-                    f"      <p>{description}</p>",
-                    f'      <p class="project-links">{" ".join(links)}</p>',
-                    "    </article>",
-                )
+        for link in project.get("extra_links", []):
+            links.append(f'<a href="{esc(link["url"])}">{esc(link["label"])}</a>')
+
+        badge, date_text, platforms = version_bits(project["path"], meta, dates)
+        metadata = card_meta_line(platforms, date_text)
+        install = ""
+        if has_downloads and project["path"] in meta:
+            install = (
+                '<details class="install"><summary>install</summary>'
+                f'{install_details(meta[project["path"]]["artifacts"])}'
+                "</details>"
             )
+        card_parts = [
+            '    <article class="project">',
+            f"      {badge}<h3>{name}</h3>",
+            f"      <p>{description}</p>",
+        ]
+        if metadata:
+            card_parts.append(f"      {metadata}")
+        card_parts.extend(
+            [
+                f'      <p class="project-links">{" ".join(links)}</p>',
+                f"      {install}" if install else "",
+                "    </article>",
+            ]
         )
+        cards.append("\n".join(part for part in card_parts if part))
 
     more_section = ""
     if more_items:
         more_section = (
-            "\n  <hr class=\"divider\">\n\n  <h2>More projects</h2>\n  <ul class=\"more-projects\">\n"
+            '\n  <hr class="divider">\n\n  <h2>More projects</h2>\n  <ul class="more-projects">\n'
             + "\n".join(more_items)
             + "\n  </ul>\n"
         )
 
+    content_nav = " ".join(
+        f'<a href="/{esc(path.stem)}/">{esc(path.stem)}</a>'
+        for path in public_content_files(repo)
+    )
     profile_links = " ".join(
-        f'<a href="{html.escape(link["url"])}">{html.escape(link["label"])}</a>'
+        f'<a href="{esc(link["url"])}">{esc(link["label"])}</a>'
         for link in site.get("links", [])
     )
-    about_paragraphs = "\n".join(
-        f'  <p class="about">{html.escape(paragraph.strip())}</p>'
+    profile_links = f'{profile_links} <a href="/tools/">tools</a> {content_nav}'
+    about = "\n".join(
+        f'  <p class="about">{esc(paragraph.strip())}</p>'
         for paragraph in site["about"].split("\n\n")
         if paragraph.strip()
     )
     tagline = ""
     if site.get("tagline"):
-        tagline = f'\n        <p class="tagline">{html.escape(site["tagline"])}</p>'
+        tagline = f'\n        <p class="tagline">{esc(site["tagline"])}</p>'
     portrait = ""
     if site.get("portrait"):
-        portrait_src = html.escape(site["portrait"])
-        portrait_alt = html.escape(site["name"])
         portrait = (
-            f'\n      <img class="portrait" src="{portrait_src}" alt="{portrait_alt}"'
-            ' width="88" height="88">'
+            f'\n      <img class="portrait" src="{esc(site["portrait"])}" '
+            f'alt="{esc(site["name"])}" width="88" height="88">'
         )
-
-    return f"""<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{html.escape(site["title"])}</title>
-  <script>
-{HEAD_SCRIPT}  </script>
-  <style>
-{STYLE}  </style>
-</head>
-<body>
-  <header>
+    body = f"""  <header>
     <div class="masthead">
       <div class="identity">{portrait}
       <div>
-        <h1>{html.escape(site["name"])} <small>{html.escape(site["title"])}</small></h1>{tagline}
+        <h1>{esc(site["name"])} <small>{esc(site["title"])}</small></h1>{tagline}
       </div>
       </div>
       <button class="theme-toggle" id="theme-toggle" aria-label="toggle color theme">dawn &frasl; moon</button>
@@ -346,40 +600,77 @@ def render_index(config: dict, base_url: str, published: dict[str, bool]) -> str
     <nav class="profile-links">{profile_links}</nav>
   </header>
 
-{about_paragraphs}
+{about}
+{now_section(repo)}
 
   <hr class="divider">
 
   <h2>Projects</h2>
+  <p class="muted">all current versions + install one-liners on <a href="/tools/">one tools page</a>.</p>
   <section class="projects">
 {chr(10).join(cards)}
-  </section>
-{more_section}
-  <footer>
-    <p>Each project page hosts prebuilt binaries with sha256 checksums.<br>
-    Source for this page: <a href="https://git.sr.ht/~averagechris/averagechris.srht.site">averagechris.srht.site</a>.</p>
-  </footer>
-  <script>
-{BODY_SCRIPT}  </script>
-</body>
-</html>
-"""
+  </section>{more_section}"""
+    return page_chrome(site["title"], site_description(site), base_url + "/", site, body, home=True)
 
+def render_content_pages(repo: pathlib.Path, site_dir: pathlib.Path, site: dict, base_url: str) -> set[str]:
+    slugs = set()
+    for path in public_content_files(repo):
+        title, body_md = markdown_title(path.read_text(), path.stem.title())
+        slug = path.stem
+        slugs.add(slug)
+        body = f"""  <main class="content">
+    <h1>{esc(title)}</h1>
+{md_to_html(body_md)}
+  </main>"""
+        dest = site_dir / slug / "index.html"
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_text(
+            page_chrome(
+                f"{title} · ~averagechris",
+                site_description(site),
+                f"{base_url}/{slug}/",
+                site,
+                body,
+            )
+        )
+    return slugs
+
+def render_tools(config: dict, site: dict, base_url: str, meta: dict[str, dict], dates: dict[str, str], has_keys: bool) -> str:
+    verify = "/keys/" if has_keys else "https://meta.sr.ht/~averagechris.pgp"
+    entries = []
+    for project in config["projects"]:
+        if not project.get("downloads", True) or project["path"] not in meta:
+            continue
+        badge, date_text, _ = version_bits(project["path"], meta, dates)
+        date_html = f' <span class="muted mono">{esc(date_text)}</span>' if date_text else ""
+        project_meta = meta[project["path"]]
+        entries.append(f"""    <article class="tool" id="{esc(project["path"])}">
+      <h2><a href="#{esc(project["path"])}">{esc(project["name"])}</a> {badge}{date_html}</h2>
+      <p>{esc(project["description"])}</p>
+      <p class="project-links"><a class="primary-link" href="/{esc(project["path"])}/">downloads page</a> <a href="{esc(project["repo"])}">source</a></p>
+      <h3>install</h3>
+{install_details(project_meta["artifacts"])}
+      <h3>verified install</h3>
+{install_details(project_meta["artifacts"], verified=True)}
+    </article>""")
+    body = f"""  <main class="content">
+    <h1>Tools</h1>
+    <p>One page with every tool I distribute. See <a href="{esc(verify)}">verification details</a>.</p>
+{chr(10).join(entries)}
+  </main>"""
+    return page_chrome("Tools · ~averagechris", site_description(site), base_url + "/tools/", site, body)
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--domain", default=None, help="override site domain")
-    parser.add_argument(
-        "--skip-mirror",
-        action="store_true",
-        help="skip mirroring live subdirectories (LOCAL PREVIEW ONLY; publishing this tarball would wipe project pages)",
-    )
-    parser.add_argument("--out", default="dist", help="output directory (default: dist)")
+    parser.add_argument("--domain", default=None)
+    parser.add_argument("--skip-mirror", action="store_true")
+    parser.add_argument("--out", default="dist")
     args = parser.parse_args()
 
     repo = pathlib.Path(__file__).resolve().parent.parent
     config = tomllib.loads((repo / "projects.toml").read_text())
-    domain = args.domain or config["site"]["domain"]
+    site = config["site"]
+    domain = args.domain or site["domain"]
     base_url = f"https://{domain}"
 
     out_dir = repo / args.out
@@ -388,23 +679,49 @@ def main() -> None:
         shutil.rmtree(site_dir)
     site_dir.mkdir(parents=True)
 
-    published: dict[str, bool] = {}
+    published = {}
     if args.skip_mirror:
         print("skipping mirror of live site (preview only)")
     else:
         print(f"mirroring live site from {base_url}")
         for project in config["projects"]:
-            if not project.get("downloads", True):
-                continue
-            published[project["path"]] = mirror_project(base_url, project["path"], site_dir)
+            if project.get("downloads", True):
+                published[project["path"]] = mirror_project(base_url, project["path"], site_dir)
 
-    (site_dir / "index.html").write_text(render_index(config, base_url, published))
+    meta = collect_metadata(config, base_url, site_dir, args.skip_mirror)
+    dates = update_release_dates(repo, meta)
+    (site_dir / "index.html").write_text(render_index(repo, config, base_url, published, meta, dates))
+
+    slugs = render_content_pages(repo, site_dir, site, base_url)
+    tools_dir = site_dir / "tools"
+    tools_dir.mkdir(parents=True, exist_ok=True)
+    (tools_dir / "index.html").write_text(
+        render_tools(config, site, base_url, meta, dates, "keys" in slugs)
+    )
+
+    not_found_body = """  <main class="content">
+    <h1>404</h1>
+    <p>nothing grows here</p>
+    <p><a href="/">home</a> · <a href="/tools/">tools</a></p>
+  </main>"""
+    (site_dir / "404.html").write_text(
+        page_chrome(
+            "404 · ~averagechris",
+            "nothing grows here",
+            base_url + "/404.html",
+            site,
+            not_found_body,
+        )
+    )
 
     assets_dir = repo / "assets"
     if assets_dir.is_dir():
         for asset in sorted(assets_dir.iterdir()):
             if asset.is_file():
                 shutil.copy2(asset, site_dir / asset.name)
+
+    out_dir.mkdir(exist_ok=True)
+    (out_dir / "siteconfig.json").write_text(json.dumps({"notFound": "404.html"}) + "\n")
 
     tarball = out_dir / "pages.tar.gz"
     with tarfile.open(tarball, "w:gz") as archive:
