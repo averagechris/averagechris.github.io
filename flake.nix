@@ -65,6 +65,11 @@
             exec python3 scripts/add_project.py "$@"
           '';
 
+          note = mkApp "note" ''
+            ${repoScripts}
+            exec python3 scripts/note.py "$@"
+          '';
+
           fleet-status = mkApp "fleet-status" ''
             ${repoScripts}
             exec python3 scripts/fleet_status.py "$@"

@@ -480,11 +480,11 @@ def card_meta_line(platforms: list[str], date: str) -> str:
         return f'<p class="mono muted">{esc(date)}</p>'
     return ""
 
-def now_section(repo: pathlib.Path) -> str:
-    path = repo / "content" / "now.md"
-    if not path.exists():
-        return ""
-    title, body = markdown_title(path.read_text(), "Now")
+
+DATE_PREFIX_RE = re.compile(r"^(?P<date>\d{4}-\d{2}-\d{2})-(?P<slug>.+)$")
+
+
+def file_date(repo: pathlib.Path, path: pathlib.Path) -> str:
     result = subprocess.run(
         ["git", "log", "-1", "--format=%cs", "--", str(path.relative_to(repo))],
         cwd=repo,
@@ -493,9 +493,44 @@ def now_section(repo: pathlib.Path) -> str:
         text=True,
     )
     if result.returncode == 0 and result.stdout.strip():
-        date = result.stdout.strip()
-    else:
-        date = dt.date.fromtimestamp(path.stat().st_mtime).isoformat()
+        return result.stdout.strip()
+    return dt.date.fromtimestamp(path.stat().st_mtime).isoformat()
+
+
+def note_slug_and_date(repo: pathlib.Path, path: pathlib.Path) -> tuple[str, str]:
+    match = DATE_PREFIX_RE.match(path.stem)
+    if match:
+        return match.group("slug"), match.group("date")
+    return path.stem, file_date(repo, path)
+
+
+def published_notes(repo: pathlib.Path) -> list[dict[str, object]]:
+    notes_dir = repo / "content" / "notes"
+    if not notes_dir.is_dir():
+        return []
+
+    notes = []
+    for path in sorted(notes_dir.glob("*.md")):
+        slug, date = note_slug_and_date(repo, path)
+        title, body_md = markdown_title(path.read_text(), path.stem)
+        notes.append(
+            {
+                "path": path,
+                "slug": slug,
+                "date": date,
+                "title": title,
+                "body_md": body_md,
+            }
+        )
+    return sorted(notes, key=lambda note: (str(note["date"]), str(note["slug"])), reverse=True)
+
+
+def now_section(repo: pathlib.Path) -> str:
+    path = repo / "content" / "now.md"
+    if not path.exists():
+        return ""
+    title, body = markdown_title(path.read_text(), "Now")
+    date = file_date(repo, path)
     return f"""
   <section class="content">
     <h2>Now</h2>
@@ -503,7 +538,15 @@ def now_section(repo: pathlib.Path) -> str:
 {md_to_html(body)}
   </section>"""
 
-def render_index(repo: pathlib.Path, config: dict, base_url: str, published: dict[str, bool], meta: dict[str, dict], dates: dict[str, str]) -> str:
+def render_index(
+    repo: pathlib.Path,
+    config: dict,
+    base_url: str,
+    published: dict[str, bool],
+    meta: dict[str, dict],
+    dates: dict[str, str],
+    notes: list[dict[str, object]],
+) -> str:
     site = config["site"]
     cards = []
     more_items = []
@@ -573,7 +616,9 @@ def render_index(repo: pathlib.Path, config: dict, base_url: str, published: dic
         f'<a href="{esc(link["url"])}">{esc(link["label"])}</a>'
         for link in site.get("links", [])
     )
+    notes_nav = ' <a href="/notes/">notes</a>' if notes else ""
     profile_links = f'{profile_links} <a href="/tools/">tools</a> {content_nav}'
+    profile_links = f"{profile_links}{notes_nav}"
     about = "\n".join(
         f'  <p class="about">{esc(paragraph.strip())}</p>'
         for paragraph in site["about"].split("\n\n")
@@ -635,6 +680,57 @@ def render_content_pages(repo: pathlib.Path, site_dir: pathlib.Path, site: dict,
         )
     return slugs
 
+
+def render_notes(repo: pathlib.Path, site_dir: pathlib.Path, site: dict, base_url: str) -> list[dict[str, object]]:
+    notes = published_notes(repo)
+    if not notes:
+        return []
+
+    notes_dir = site_dir / "notes"
+    notes_dir.mkdir(parents=True, exist_ok=True)
+    entries = []
+    for note in notes:
+        slug = str(note["slug"])
+        title = str(note["title"])
+        date = str(note["date"])
+        body = f"""  <main class="content">
+    <h1>{esc(title)}</h1>
+    <p class="muted mono">{esc(date)}</p>
+{md_to_html(str(note["body_md"]))}
+  </main>"""
+        dest = notes_dir / slug / "index.html"
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_text(
+            page_chrome(
+                f"{title} · ~averagechris",
+                site_description(site),
+                f"{base_url}/notes/{slug}/",
+                site,
+                body,
+            )
+        )
+        entries.append(
+            f'    <li><span class="muted mono">{esc(date)}</span> — '
+            f'<a href="/notes/{esc(slug)}/">{esc(title)}</a></li>'
+        )
+
+    index_body = f"""  <main class="content">
+    <h1>Notes</h1>
+    <ul class="more-projects">
+{chr(10).join(entries)}
+    </ul>
+  </main>"""
+    (notes_dir / "index.html").write_text(
+        page_chrome(
+            "Notes · ~averagechris",
+            site_description(site),
+            f"{base_url}/notes/",
+            site,
+            index_body,
+        )
+    )
+    return notes
+
 def render_tools(config: dict, site: dict, base_url: str, meta: dict[str, dict], dates: dict[str, str], has_keys: bool) -> str:
     verify = "/keys/" if has_keys else "https://meta.sr.ht/~averagechris.pgp"
     entries = []
@@ -690,9 +786,13 @@ def main() -> None:
 
     meta = collect_metadata(config, base_url, site_dir, args.skip_mirror)
     dates = update_release_dates(repo, meta)
-    (site_dir / "index.html").write_text(render_index(repo, config, base_url, published, meta, dates))
 
     slugs = render_content_pages(repo, site_dir, site, base_url)
+    notes = render_notes(repo, site_dir, site, base_url)
+    (site_dir / "index.html").write_text(
+        render_index(repo, config, base_url, published, meta, dates, notes)
+    )
+
     tools_dir = site_dir / "tools"
     tools_dir.mkdir(parents=True, exist_ok=True)
     (tools_dir / "index.html").write_text(

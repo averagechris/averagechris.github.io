@@ -30,6 +30,11 @@ artifact) into the tarball. That means:
 # add a new project card
 nix run .#add-project -- my-project --description "What it does"
 
+# create and manage notes
+nix run .#note -- new "Title"
+nix run .#note -- distill
+nix run .#note -- publish <draft>
+
 # build (mirrors the live site, generates index.html, packs dist/pages.tar.gz)
 nix run .#build-pages
 
@@ -47,6 +52,9 @@ Pushing to this repo also republishes the site via `.builds/pages.yml`.
 
 - `projects.toml` — site metadata (about, links) and the project registry
 - `content/` — root-owned Markdown pages rendered to `/<slug>/`
+- `content/notes/` — published Markdown notes rendered to `/notes/<slug>/`
+- `content/notes/_drafts/` — unpublished note drafts; never rendered
 - `release-dates.toml` — cache of release tag dates used by CI builds
 - `scripts/build_pages.py` — mirror + generate + tar
 - `scripts/add_project.py` — append a project entry to `projects.toml`
+- `scripts/note.py` — create, distill, list, and publish notes

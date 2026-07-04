@@ -93,3 +93,12 @@ If main moved since the workspace was created, `jj rebase -s <change-id> -d main
 - Republish: push to this repo (CI does it) or `nix run .#build-pages && nix run .#publish-pages`
 - NEVER publish a tarball built with `--skip-mirror` (guard exists: `dist/PREVIEW_ONLY`)
 - `projects.toml` must list every subdirectory ever published to the site
+
+### Recipe: distill TIL notes
+
+Run `nix run .#note -- distill`, then inspect each generated session stub with
+`ctx show session <id>`. Replace the stub's checkbox line with 1–5 one-line
+bullet facts that are TIL-worthy: plain, specific, and useful. Keep the
+`ctx show session` reference line, delete stubs that yielded nothing
+interesting, and leave the draft in `content/notes/_drafts/` for Chris to
+review and publish. Agents never publish notes.
