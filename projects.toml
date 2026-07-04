@@ -98,3 +98,9 @@ description = "Declarative OpenClaw via Nix; fork with extra features and fixes.
 repo = "https://git.sr.ht/~averagechris/nix-openclaw"
 downloads = false
 tier = "more"
+
+[[projects]]
+path = "workctl"
+name = "workctl"
+description = "A Rust control plane for delegated software-development tasks. Durable, inspectable, delegated coding tasks via workd."
+repo = "https://git.sr.ht/~averagechris/workctl"
