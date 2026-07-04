@@ -106,7 +106,6 @@ artifact_prefix = "workctl"
 quirks = [
   "cargo workspace: version is [workspace.package] in ROOT Cargo.toml; prepare-release also bumps the workctl-core pin in [workspace.dependencies] and all three Cargo.lock stanzas (workctl, workctl-core, workd)",
   "release tarball ships TWO binaries: workctl and workd",
-  "no LICENSE files yet (Cargo.toml says MIT OR Apache-2.0); tarball omits license text",
   "nix flake check has a pre-existing sandbox failure (cargo hits crates.io CA verify) — the ci-* apps are the real gates",
   ".jj-lint.toml direct-tool lints (alejandra, statix, cargo-*) need the dev shell; run via nix develop --command outside it",
 ]
