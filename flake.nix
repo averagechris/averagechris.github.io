@@ -49,7 +49,7 @@
         '';
       in {
         apps = {
-          build-pages = mkApp "build-pages" ''
+          build-pages = mkAppWithInputs "build-pages" [python pkgs.git pkgs.curl] ''
             ${repoScripts}
             exec python3 scripts/build_pages.py "$@"
           '';

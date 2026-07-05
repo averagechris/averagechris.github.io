@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 """Build the averagechris.srht.site root Pages tarball.
 
-The builder mirrors release subdirectories, reads their release manifests at
-build time, generates the homepage plus root-owned pages (content markdown,
-/tools/, 404.html), writes SourceHut siteconfig.json, and packs dist/site into
-dist/pages.tar.gz. Root publishes replace the entire site, so projects.toml is
-still the registry of mirrored project subdirectories.
+Single-publisher model: renders every fleet project's downloads subdirectory
+from durable sources (annotated git tags, tag artifacts, and docs pages fetched
+from each repo), generates the homepage plus root-owned pages (content
+markdown, /tools/, 404.html), writes SourceHut siteconfig.json, records input
+pins in state.json, and packs dist/site into dist/pages.tar.gz. Root publishes
+replace the entire site; projects.toml is the registry of subdirectories.
 """
 
 from __future__ import annotations
@@ -21,14 +22,12 @@ import shutil
 import subprocess
 import sys
 import tarfile
+import tempfile
 import tomllib
-import urllib.error
 import urllib.parse
-import urllib.request
 
 import markdown
 
-HREF_RE = re.compile(r'href="([^"]+)"')
 ARTIFACT_RE = re.compile(
     r"(.+)-(?P<version>v\d+\.\d+\.\d+)-"
     r"(?P<arch>x86_64|aarch64)-(?P<os>linux|darwin)\.tar\.gz$"
@@ -36,11 +35,7 @@ ARTIFACT_RE = re.compile(
 SEMVER_TAG_RE = re.compile(r"^v\d+\.\d+\.\d+$")
 PLATFORMS = ("aarch64-darwin", "x86_64-darwin", "aarch64-linux", "x86_64-linux")
 DOC_PAGES = ("overview.html", "example.html", "tour.html", "sample-review.html")
-EXTRA_SUBTREE_FILES = ("manifest.json",)
-EXTRA_SOFT_SUBTREE_FILES = ("manifest.json", "overview.html", "example.html")
 PROJECT_INFO_PAGES = ("overview.html", "example.html")
-MIRROR_MAX_HTML_DEPTH = 3
-MIRROR_MAX_FILES = 200
 RELEASE_DATES_HEADER = """# Cache of release tag dates, updated automatically by build-pages when
 # local fleet repos are available. Safe to commit; CI reads it as-is.
 [dates]
@@ -208,18 +203,31 @@ def esc(value: object) -> str:
 def fail(message: str) -> "sys.NoReturn":
     raise SystemExit(f"error: {message}")
 
+USER_AGENT = "averagechris-fleet-pages (+https://averagechris.srht.site)"
+
+
 def fetch(url: str, *, soft: bool = False) -> bytes | None:
-    try:
-        with urllib.request.urlopen(url, timeout=60) as response:
-            return response.read()
-    except urllib.error.HTTPError as error:
-        if error.code == 404 or soft:
+    """Fetch a URL via curl. python-urllib gets tarpitted by sr.ht's
+    anti-scraper defenses on datacenter IPs; curl with a real UA does not."""
+    with tempfile.NamedTemporaryFile() as body:
+        try:
+            result = subprocess.run(
+                ["curl", "-sS", "--location", "--max-time", "120", "--retry", "2",
+                 "--user-agent", USER_AGENT, "-o", body.name, "-w", "%{http_code}", url],
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=420,
+            )
+        except subprocess.TimeoutExpired:
+            fail(f"fetching {url}: curl timed out")
+        code = result.stdout.strip()
+        if result.returncode != 0 and not code.isdigit():
+            if soft:
+                return None
+            fail(f"fetching {url}: {result.stderr.strip()}")
+        if code == "200":
+            return pathlib.Path(body.name).read_bytes()
+        if code == "404" or soft:
             return None
-        fail(f"fetching {url}: HTTP {error.code}")
-    except urllib.error.URLError as error:
-        if soft:
-            return None
-        fail(f"fetching {url}: {error}")
+        fail(f"fetching {url}: HTTP {code}")
 
 
 def run_text(command: list[str]) -> str:
@@ -383,87 +391,6 @@ def build_fleet_projects(repo: pathlib.Path, config: dict, site_dir: pathlib.Pat
     return published, meta, pages, state
 
 
-def subtree_files_from_page(page_html: str) -> set[str]:
-    files = set()
-    for href in HREF_RE.findall(page_html):
-        parsed = urllib.parse.urlparse(href)
-        if parsed.scheme or parsed.netloc or href.startswith(("/", "#")):
-            continue
-        candidate = urllib.parse.unquote(parsed.path)
-        normalized = pathlib.PurePosixPath(candidate)
-        if candidate and not candidate.endswith("/") and ".." not in normalized.parts:
-            files.add(str(normalized))
-    return files
-
-
-def mirror_project(base_url: str, path: str, site_dir: pathlib.Path) -> bool:
-    project_url = f"{base_url}/{path}"
-    index_bytes = fetch(f"{project_url}/index.html") or fetch(f"{project_url}/")
-    if index_bytes is None:
-        print(f"  {path}: not published yet, skipping mirror")
-        return False
-
-    project_dir = site_dir / path
-    project_dir.mkdir(parents=True)
-    (project_dir / "index.html").write_bytes(index_bytes)
-
-    files = subtree_files_from_page(index_bytes.decode("utf-8", errors="replace"))
-    files.update(EXTRA_SOFT_SUBTREE_FILES)
-    files.discard("index.html")
-    seen = {"index.html"}
-    html_queue = [
-        (relative, 1)
-        for relative in sorted(files)
-        if pathlib.PurePosixPath(relative).suffix.lower() == ".html"
-    ]
-    fetched = 0
-    while files:
-        if len(seen) > MIRROR_MAX_FILES:
-            fail(f"{path}: mirror exceeded {MIRROR_MAX_FILES} files; refusing incomplete mirror")
-        relative = sorted(files)[0]
-        files.remove(relative)
-        if relative in seen:
-            continue
-        seen.add(relative)
-        content = fetch(f"{project_url}/{urllib.parse.quote(relative, safe='/')}")
-        if content is None:
-            if relative in EXTRA_SOFT_SUBTREE_FILES:
-                continue
-            fail(f"{path}: linked file {relative} returned 404; refusing incomplete mirror")
-        destination = project_dir / relative
-        destination.parent.mkdir(parents=True, exist_ok=True)
-        destination.write_bytes(content)
-        fetched += 1
-        if pathlib.PurePosixPath(relative).suffix.lower() == ".html":
-            html_depth = next((depth for queued, depth in html_queue if queued == relative), 1)
-            if html_depth < MIRROR_MAX_HTML_DEPTH:
-                linked = subtree_files_from_page(content.decode("utf-8", errors="replace"))
-                for discovered in linked:
-                    if discovered not in seen:
-                        files.add(discovered)
-                        if pathlib.PurePosixPath(discovered).suffix.lower() == ".html":
-                            html_queue.append((discovered, html_depth + 1))
-    print(f"  {path}: mirrored index.html + {fetched} files")
-    return True
-
-
-def collect_project_pages(config: dict, base_url: str, site_dir: pathlib.Path, skip_mirror: bool) -> dict[str, set[str]]:
-    pages = {}
-    for project in config["projects"]:
-        if not project.get("downloads", True):
-            continue
-        found = set()
-        for page in PROJECT_INFO_PAGES:
-            if skip_mirror:
-                if fetch(f"{base_url}/{project['path']}/{page}", soft=True) is not None:
-                    found.add(page)
-            elif (site_dir / project["path"] / page).is_file():
-                found.add(page)
-        if found:
-            pages[project["path"]] = found
-    return pages
-
-
 def project_info_links(base_url: str, project: dict, pages: dict[str, set[str]]) -> list[str]:
     path = project["path"]
     return [
@@ -471,13 +398,6 @@ def project_info_links(base_url: str, project: dict, pages: dict[str, set[str]])
         for page in PROJECT_INFO_PAGES
         if page in pages.get(path, set())
     ]
-
-
-def read_json(path: pathlib.Path) -> dict | None:
-    try:
-        return json.loads(path.read_text())
-    except Exception:
-        return None
 
 
 def parse_manifest(manifest: dict | None) -> dict | None:
@@ -519,23 +439,6 @@ def parse_manifest(manifest: dict | None) -> dict | None:
         "artifacts": current,
         "platforms": [artifact["label"] for artifact in current],
     }
-
-
-def collect_metadata(config: dict, base_url: str, site_dir: pathlib.Path, skip_mirror: bool) -> dict[str, dict]:
-    meta = {}
-    for project in config["projects"]:
-        if not project.get("downloads", True):
-            continue
-        raw = None
-        if skip_mirror:
-            data = fetch(f"{base_url}/{project['path']}/manifest.json", soft=True)
-            raw = json.loads(data) if data else None
-        else:
-            raw = read_json(site_dir / project["path"] / "manifest.json")
-        parsed = parse_manifest(raw)
-        if parsed:
-            meta[project["path"]] = parsed
-    return meta
 
 
 def load_release_dates(repo: pathlib.Path) -> dict[str, str]:
