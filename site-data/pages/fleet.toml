@@ -1,0 +1,6 @@
+slug = "fleet"
+title = "How this fleet works"
+description = "How Chris' project release fleet and root Pages publisher work."
+listed = true
+draft = false
+body_format = "markdown"

@@ -1,0 +1,18 @@
+[site]
+domain = "averagechris.srht.site"
+title = "~averagechris"
+name = "Chris"
+tagline = "computers · gardens · bicycles — Los Angeles"
+portrait = "portrait.jpg"
+about = """
+I'm Chris. I like computer nerd stuff, gardening, and riding bikes. \
+Based in Los Angeles. I host my personal open source projects on \
+SourceHut and publish prebuilt binaries here."""
+
+[[site.links]]
+label = "sourcehut"
+url = "https://sr.ht/~averagechris/"
+
+[[site.links]]
+label = "git"
+url = "https://git.sr.ht/~averagechris/"

@@ -1,0 +1,6 @@
+slug = "keys"
+title = "Keys & verification"
+description = "PGP keys and release artifact verification details."
+listed = true
+draft = false
+body_format = "markdown"

@@ -1,68 +1,50 @@
-# Projects listed on https://averagechris.srht.site/
-#
-# Each [[projects]] entry renders on the homepage. Fleet project downloads/docs
-# are built centrally from sourcehut tags, tag artifacts, and pinned main files.
-#
-# Fields:
-#   path        subdirectory under the site root / stable identifier
-#   downloads   default true; false = no downloads page (card links source only,
-#               no fleet downloads page is rendered for it)
-#   tier        "featured" (default, card) or "more" (compact list)
-#   listed      default true; false = keep metadata but show nothing
-#   extra_links optional links rendered before source, e.g. [{ label = "uses", url = "/uses/" }]
-#
-# Add entries with: nix run .#add-project -- <path> --description "..."
-
-[site]
-domain = "averagechris.srht.site"
-title = "~averagechris"
-name = "Chris"
-tagline = "computers · gardens · bicycles — Los Angeles"
-# root-relative asset copied from assets/ by build-pages
-portrait = "portrait.jpg"
-about = """
-I'm Chris. I like computer nerd stuff, gardening, and riding bikes. \
-Based in Los Angeles. I host my personal open source projects on \
-SourceHut and publish prebuilt binaries here."""
-
-[[site.links]]
-label = "sourcehut"
-url = "https://sr.ht/~averagechris/"
-
-[[site.links]]
-label = "git"
-url = "https://git.sr.ht/~averagechris/"
+# Project registry for https://averagechris.srht.site/.
+# Fleet release mechanics stay in fleet.toml.
 
 [[projects]]
-# subdirectory under https://averagechris.srht.site/
 path = "linear-cli"
 name = "linear-cli"
 description = "A hardened Rust CLI for Linear.app. Keyring-only auth, no telemetry, no self-update."
 repo = "https://git.sr.ht/~averagechris/linear-cli"
+downloads = true
+tier = "featured"
+extra_links = []
 
 [[projects]]
 path = "slack"
 name = "slack-rs"
 description = "A hardened Rust CLI for the Slack Web API, for me and my friends (you)."
 repo = "https://git.sr.ht/~averagechris/slack"
+downloads = true
+tier = "featured"
+extra_links = []
 
 [[projects]]
 path = "granola-cli"
 name = "granola-cli"
 description = "A Rust CLI for Granola meeting notes."
 repo = "https://git.sr.ht/~averagechris/granola-cli"
+downloads = true
+tier = "featured"
+extra_links = []
 
 [[projects]]
 path = "ctx"
 name = "ctx"
 description = "Local-first agent history search CLI. Indexes your past coding-agent sessions."
 repo = "https://git.sr.ht/~averagechris/ctx"
+downloads = true
+tier = "featured"
+extra_links = []
 
 [[projects]]
 path = "gander"
 name = "gander"
 description = "Take a gander at your jj changes: a fast review TUI with durable viewed-state, comments, and exportable review artifacts."
 repo = "https://git.sr.ht/~averagechris/gander"
+downloads = true
+tier = "featured"
+extra_links = []
 
 [[projects]]
 path = "dotfiles"
@@ -70,6 +52,7 @@ name = "dotfiles"
 description = "My system configuration, fully consumed by Nix: a NixOS + nix-darwin multi-machine flake."
 repo = "https://git.sr.ht/~averagechris/dotfiles"
 downloads = false
+tier = "featured"
 extra_links = [{ label = "uses", url = "/uses/" }]
 
 [[projects]]
@@ -77,6 +60,9 @@ path = "starship-jj"
 name = "starship-jj"
 description = "Starship prompt module for Jujutsu; fork with performance improvements."
 repo = "https://git.sr.ht/~averagechris/starship-jj"
+downloads = true
+tier = "featured"
+extra_links = []
 
 [[projects]]
 path = "goodbot"
@@ -85,6 +71,7 @@ description = "Plugin-first, Telegram-first, local-first assistant runtime in Ru
 repo = "https://git.sr.ht/~averagechris/goodbot"
 downloads = false
 tier = "more"
+extra_links = []
 
 [[projects]]
 path = "nix-openclaw"
@@ -93,9 +80,13 @@ description = "Declarative OpenClaw via Nix; fork with extra features and fixes.
 repo = "https://git.sr.ht/~averagechris/nix-openclaw"
 downloads = false
 tier = "more"
+extra_links = []
 
 [[projects]]
 path = "workctl"
 name = "workctl"
 description = "A Rust control plane for delegated software-development tasks. Durable, inspectable, delegated coding tasks via workd."
 repo = "https://git.sr.ht/~averagechris/workctl"
+downloads = true
+tier = "featured"
+extra_links = []

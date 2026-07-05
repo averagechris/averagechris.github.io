@@ -1,5 +1,3 @@
-# sccache, or: Rust ate my Mac in one workday
-
 I had never heard of sccache until the yesterday. My work macbook ran out of disk space in a single afternoon. In the past I just had a script that would go run `cargo clean` in all of my checkouts that I would manually run occasionally. But with agentic coding, I really am working on a bunch of different things all at once with different jj workspaces and therefor compilinig like never before... haha.
 
 So yeah tl;dr; my work macbook basically almost died. I manually deleted some stuff then learned about sccache. It's made a huge difference :D

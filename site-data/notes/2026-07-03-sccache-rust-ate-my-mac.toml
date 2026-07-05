@@ -1,0 +1,7 @@
+slug = "sccache-rust-ate-my-mac"
+title = "sccache, or: Rust ate my Mac in one workday"
+description = "A note about setting up sccache after Rust builds filled a Mac."
+date = "2026-07-03"
+listed = true
+draft = false
+body_format = "markdown"

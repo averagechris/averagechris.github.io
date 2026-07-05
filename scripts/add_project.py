@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Add a project entry to projects.toml.
+"""Add a project entry to site-data/projects.toml.
 
 Usage:
     add_project.py <path> --description "..." [--name NAME] [--repo URL] [--unlisted]
@@ -54,11 +54,11 @@ def main() -> None:
         raise SystemExit(f"error: path {path!r} is reserved by the root site")
 
     repo_root = pathlib.Path(__file__).resolve().parent.parent
-    config_path = repo_root / "projects.toml"
+    config_path = repo_root / "site-data" / "projects.toml"
     config = tomllib.loads(config_path.read_text())
 
     if any(project["path"] == path for project in config.get("projects", [])):
-        print(f"{path} is already in projects.toml; nothing to do")
+        print(f"{path} is already in site-data/projects.toml; nothing to do")
         sys.exit(0)
 
     lines = [
@@ -81,7 +81,7 @@ def main() -> None:
 
     # Validate the result still parses.
     tomllib.loads(config_path.read_text())
-    print(f"added {path} to projects.toml")
+    print(f"added {path} to site-data/projects.toml")
 
 
 if __name__ == "__main__":

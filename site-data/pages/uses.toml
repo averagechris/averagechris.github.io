@@ -1,0 +1,6 @@
+slug = "uses"
+title = "Uses"
+description = "Current machines, editor, terminal, Nix, jj, and small CLI setup."
+listed = true
+draft = false
+body_format = "markdown"

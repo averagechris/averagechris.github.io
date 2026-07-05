@@ -3,10 +3,10 @@
 
 Single-publisher model: renders every fleet project's downloads subdirectory
 from durable sources (annotated git tags, tag artifacts, and docs pages fetched
-from each repo), generates the homepage plus root-owned pages (content
+from each repo), generates the homepage plus root-owned pages (site-data
 markdown, /tools/, 404.html), writes SourceHut siteconfig.json, records input
 pins in state.json, and packs dist/site into dist/pages.tar.gz. Root publishes
-replace the entire site; projects.toml is the registry of subdirectories.
+replace the entire site; site-data/projects.toml is the registry of subdirectories.
 """
 
 from __future__ import annotations
@@ -27,6 +27,8 @@ import tomllib
 import urllib.parse
 
 import markdown
+
+from site_data import Page, load_site_data
 
 ARTIFACT_RE = re.compile(
     r"(.+)-(?P<version>v\d+\.\d+\.\d+)-"
@@ -502,17 +504,6 @@ def update_release_dates(repo: pathlib.Path, meta: dict[str, dict]) -> dict[str,
         print("updated release-dates.toml with learned tag dates; commit it with this change")
     return dates
 
-def content_files(repo: pathlib.Path) -> list[pathlib.Path]:
-    root = repo / "content"
-    if not root.is_dir():
-        return []
-    return sorted(root.glob("*.md"))
-
-
-def public_content_files(repo: pathlib.Path) -> list[pathlib.Path]:
-    return [path for path in content_files(repo) if path.stem != "now"]
-
-
 def markdown_title(text: str, fallback: str) -> tuple[str, str]:
     lines = text.splitlines()
     if lines and lines[0].startswith("# "):
@@ -665,17 +656,20 @@ def published_notes(repo: pathlib.Path) -> list[dict[str, object]]:
     return sorted(notes, key=lambda note: (str(note["date"]), str(note["slug"])), reverse=True)
 
 
-def now_section(repo: pathlib.Path) -> str:
-    path = repo / "content" / "now.md"
-    if not path.exists():
+def public_content_pages(config: dict) -> list[Page]:
+    return [page for page in config["pages"] if page.listed and not page.draft]
+
+
+def now_section(config: dict) -> str:
+    page = next((page for page in config["pages"] if page.slug == "now" and not page.draft), None)
+    if page is None:
         return ""
-    title, body = markdown_title(path.read_text(), "Now")
-    date = file_date(repo, path)
+    date = page.date or ""
     return f"""
   <section class="content">
     <h2>Now</h2>
     <p class="muted">updated {esc(date)}</p>
-{md_to_html(body)}
+{md_to_html(page.body)}
   </section>"""
 
 def render_index(
@@ -760,8 +754,8 @@ def render_index(
         )
 
     content_nav = " ".join(
-        f'<a href="/{esc(path.stem)}/">{esc(path.stem)}</a>'
-        for path in public_content_files(repo)
+        f'<a href="/{esc(page.slug)}/">{esc(page.slug)}</a>'
+        for page in public_content_pages(config)
     )
     profile_links = " ".join(
         f'<a href="{esc(link["url"])}">{esc(link["label"])}</a>'
@@ -797,7 +791,7 @@ def render_index(
   </header>
 
 {about}
-{now_section(repo)}
+{now_section(config)}
 
   <hr class="divider">
 
@@ -809,10 +803,12 @@ def render_index(
     return page_chrome(site["title"], site_description(site), base_url + "/", site, body, home=True)
 
 def render_content_pages(repo: pathlib.Path, site_dir: pathlib.Path, site: dict, base_url: str) -> set[str]:
+    del repo
     slugs = set()
-    for path in public_content_files(repo):
-        title, body_md = markdown_title(path.read_text(), path.stem.title())
-        slug = path.stem
+    for page in public_content_pages(site["_config"]):
+        title = page.title
+        body_md = page.body
+        slug = page.slug
         slugs.add(slug)
         body = f"""  <main class="content">
     <h1>{esc(title)}</h1>
@@ -833,7 +829,16 @@ def render_content_pages(repo: pathlib.Path, site_dir: pathlib.Path, site: dict,
 
 
 def render_notes(repo: pathlib.Path, site_dir: pathlib.Path, site: dict, base_url: str) -> list[dict[str, object]]:
-    notes = published_notes(repo)
+    del repo
+    notes = sorted(
+        (
+            {"slug": note.slug, "date": note.date, "title": note.title, "body_md": note.body}
+            for note in site["_config"]["notes"]
+            if note.listed and not note.draft
+        ),
+        key=lambda note: (str(note["date"]), str(note["slug"])),
+        reverse=True,
+    )
     if not notes:
         return []
 
@@ -925,8 +930,10 @@ def main() -> None:
     args = parser.parse_args()
 
     repo = pathlib.Path(__file__).resolve().parent.parent
-    config = tomllib.loads((repo / "projects.toml").read_text())
+    loaded = load_site_data(repo)
+    config = {"site": dict(loaded.site), "projects": loaded.projects, "pages": loaded.pages, "notes": loaded.notes}
     site = config["site"]
+    site["_config"] = config
     domain = args.domain or site["domain"]
     base_url = f"https://{domain}"
 

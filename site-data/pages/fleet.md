@@ -1,5 +1,3 @@
-# How this fleet works
-
 I keep my personal tools boring on purpose. Each release-tier repo is a small Rust/Nix/jj citizen with the same public buttons, so I do not have to remember six different rituals while trying to publish a tarball before coffee becomes archaeology.
 
 The shared interface is a set of Nix flake apps. In any fleet repo, the release path is meant to look like this:

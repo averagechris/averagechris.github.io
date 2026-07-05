@@ -1,5 +1,3 @@
-# Keys & verification
-
 My PGP key:
 
 ```text

@@ -40,7 +40,7 @@ pass to replace nixfmt/raw Alejandra formatters.
 New project bootstrap is `nix run .#new-project` from the target directory. It
 infers the project name from the directory unless `--name` is provided and writes
 public `.averagechris-project.toml` metadata, but intentionally does **not**
-mutate this site checkout or edit `fleet.toml`/`projects.toml`. Site enrollment
+mutate this site checkout or edit `fleet.toml`/`site-data/projects.toml`. Site enrollment
 automation is deferred; revisit a workflow driven by todos/workctl so Chris can
 review and apply registry updates explicitly. Default homepage tier metadata is
 `more`; use `--featured` only to mark card intent. Remote usage should include
@@ -138,5 +138,5 @@ Run `nix run .#note -- distill`, then inspect each generated session stub with
 `ctx show session <id>`. Replace the stub's checkbox line with 1–5 one-line
 bullet facts that are TIL-worthy: plain, specific, and useful. Keep the
 `ctx show session` reference line, delete stubs that yielded nothing
-interesting, and leave the draft in `content/notes/_drafts/` for Chris to
+interesting, and leave the draft in `site-data/notes/_drafts/` for Chris to
 review and publish. Agents never publish notes.

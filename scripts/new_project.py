@@ -761,7 +761,7 @@ def refuse_site_checkout(args: argparse.Namespace) -> None:
     for candidate in (start, *start.parents):
         site_markers = [
             candidate / "fleet.toml",
-            candidate / "projects.toml",
+            candidate / "site-data" / "projects.toml",
             candidate / "scripts" / "new_project.py",
         ]
         if all(marker.exists() for marker in site_markers):

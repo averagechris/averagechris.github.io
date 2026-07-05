@@ -33,7 +33,7 @@ def slugify(value: str) -> str:
 
 
 def notes_dir() -> pathlib.Path:
-    return repo_root() / "content" / "notes"
+    return repo_root() / "site-data" / "notes"
 
 
 def drafts_dir() -> pathlib.Path:
@@ -46,12 +46,22 @@ def today() -> str:
 
 def new_note(args: argparse.Namespace) -> None:
     slug = args.slug or slugify(args.title)
-    path = notes_dir() / f"{today()}-{slug}.md"
-    if path.exists():
-        fail(f"refusing to overwrite {path}")
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(f"# {args.title}\n\n")
-    print(path)
+    meta_path = drafts_dir() / f"{today()}-{slug}.toml"
+    body_path = drafts_dir() / f"{today()}-{slug}.md"
+    if meta_path.exists() or body_path.exists():
+        fail(f"refusing to overwrite {meta_path} / {body_path}")
+    meta_path.parent.mkdir(parents=True, exist_ok=True)
+    meta_path.write_text(
+        f'slug = "{slug}"\n'
+        f'title = "{args.title.replace(chr(34), chr(92)+chr(34))}"\n'
+        f'description = "draft note"\n'
+        f'date = "{today()}"\n'
+        'listed = false\n'
+        'draft = true\n'
+        'body_format = "markdown"\n'
+    )
+    body_path.write_text("\n")
+    print(body_path)
 
 
 def list_drafts(args: argparse.Namespace) -> None:
@@ -90,10 +100,16 @@ def publish(args: argparse.Namespace) -> None:
     if not DATE_PREFIX_RE.match(filename):
         filename = f"{today()}-{filename}"
     destination = notes_dir() / filename
-    if destination.exists():
-        fail(f"refusing to overwrite {destination}")
+    meta = draft.with_suffix(".toml")
+    meta_destination = destination.with_suffix(".toml")
+    if destination.exists() or meta_destination.exists():
+        fail(f"refusing to overwrite {destination} / {meta_destination}")
     destination.parent.mkdir(parents=True, exist_ok=True)
     shutil.move(str(draft), destination)
+    if meta.exists():
+        text = meta.read_text().replace("draft = true", "draft = false").replace("listed = false", "listed = true")
+        meta_destination.write_text(text)
+        meta.unlink()
     print(destination)
     print("review, commit, and push when ready")
 
@@ -252,6 +268,16 @@ def distill(args: argparse.Namespace) -> None:
         lines.append("")
         lines.extend(stubs)
     path.write_text("\n".join(lines).rstrip() + "\n")
+    slug = path.stem
+    path.with_suffix(".toml").write_text(
+        f'slug = "{slug}"\n'
+        f'title = "Distill digest {today()}"\n'
+        'description = "Unpublished distilled agent-session notes."\n'
+        f'date = "{today()}"\n'
+        'listed = false\n'
+        'draft = true\n'
+        'body_format = "markdown"\n'
+    )
     print(path)
 
 

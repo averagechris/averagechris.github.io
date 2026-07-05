@@ -1,5 +1,3 @@
-# Uses
-
 This is what my dotfiles say I actually run. Not aspirational desk-tour content. The computer equivalent of looking in the junk drawer.
 
 ## OS & machines

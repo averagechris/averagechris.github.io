@@ -50,7 +50,7 @@ nix run .#publish-pages
 ```
 
 `new-project` writes public `.averagechris-project.toml` metadata but does not
-edit this site's `fleet.toml` or `projects.toml`; site enrollment is a manual
+edit this site's `fleet.toml` or `site-data/projects.toml`; site enrollment is a manual
 follow-up for now.
 
 Pushing to this repo also republishes the site via `.builds/pages.yml`.
@@ -60,12 +60,14 @@ only when the durable sources changed.
 
 ## Files
 
-- `projects.toml` — site metadata (about, links) and the project registry
-- `content/` — root-owned Markdown pages rendered to `/<slug>/`
-- `content/notes/` — published Markdown notes rendered to `/notes/<slug>/`
-- `content/notes/_drafts/` — unpublished note drafts; never rendered
+- `site-data/site.toml` — site metadata (about, links, domain)
+- `site-data/projects.toml` — project registry; fleet release mechanics stay in `fleet.toml`
+- `site-data/pages/` — root-owned page TOML sidecars + Markdown/HTML bodies rendered to `/<slug>/`
+- `site-data/notes/` — published note TOML sidecars + bodies rendered to `/notes/<slug>/`
+- `site-data/notes/_drafts/` — unpublished note drafts; the checked loader refuses to publish them
 - `release-dates.toml` — cache of release tag dates used by CI builds
 - `scripts/build_pages.py` — build fleet pages + generate homepage/tools + tar
 - `scripts/refresh_pages.py` — race-safe fingerprint check and publish wrapper
-- `scripts/add_project.py` — append a project entry to `projects.toml`
+- `scripts/site_data.py` — validate canonical `site-data/` (`python3 scripts/site_data.py --check`)
+- `scripts/add_project.py` — append a project entry to `site-data/projects.toml`
 - `scripts/note.py` — create, distill, list, and publish notes
