@@ -26,6 +26,11 @@ for repo-internal implementation details.
 ## Usage
 
 ```sh
+# bootstrap a new Rust CLI/fleet project from the project directory
+nix run .#new-project -- --description "A SourceHut CLI"
+# from elsewhere, once this repo is pushed:
+nix run --accept-flake-config git+https://git.sr.ht/~averagechris/averagechris.srht.site#new-project -- --description "A SourceHut CLI"
+
 # add a new project card
 nix run .#add-project -- my-project --description "What it does"
 
@@ -42,6 +47,10 @@ nix run .#serve            # http://localhost:8000
 # publish to https://averagechris.srht.site/
 nix run .#publish-pages
 ```
+
+`new-project` writes public `.averagechris-project.toml` metadata but does not
+edit this site's `fleet.toml` or `projects.toml`; site enrollment is a manual
+follow-up for now.
 
 Pushing to this repo also republishes the site via `.builds/pages.yml`.
 `.builds/refresh-pages.yml` can be submitted by an external scheduler to run

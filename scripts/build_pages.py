@@ -34,7 +34,15 @@ ARTIFACT_RE = re.compile(
 )
 SEMVER_TAG_RE = re.compile(r"^v\d+\.\d+\.\d+$")
 PLATFORMS = ("aarch64-darwin", "x86_64-darwin", "aarch64-linux", "x86_64-linux")
-DOC_PAGES = ("overview.html", "example.html", "tour.html", "sample-review.html")
+DOC_PAGES = (
+    "overview.html",
+    "examples.html",
+    "example.html",
+    "demo.html",
+    "changelog.html",
+    "tour.html",
+    "sample-review.html",
+)
 PROJECT_INFO_PAGES = ("overview.html", "example.html")
 RELEASE_DATES_HEADER = """# Cache of release tag dates, updated automatically by build-pages when
 # local fleet repos are available. Safe to commit; CI reads it as-is.
@@ -337,7 +345,7 @@ def render_download_page(site: dict, project: dict, base_url: str, info: dict) -
         klass = "release latest" if tag == info["tag"] else "release"
         label = "Latest release" if tag == info["tag"] else "Release"
         releases.append(f"""<section class="{klass}"><div class="release-heading"><div><p class="eyebrow">{label}</p><h3>{esc(tag)}</h3></div><span class="build-count">{len(arts)} builds</span></div><div class="build-grid">{body}</div></section>""")
-    page_links = "".join(f'<a class="page-link" href="{esc(p)}">{esc(p.removesuffix(".html"))}</a>' for p in info["docs"] if p in ("overview.html", "example.html", "tour.html", "sample-review.html"))
+    page_links = "".join(f'<a class="page-link" href="{esc(p)}">{esc(p.removesuffix(".html"))}</a>' for p in info["docs"] if p in DOC_PAGES)
     whats = md_to_html(info["changelog"].get(info["tag"], "No changelog entry found."))
     prev = "".join(f'<details><summary>{esc(t)}</summary>{md_to_html(info["changelog"].get(t, ""))}</details>' for t in info["versions"][1:3] if info["changelog"].get(t))
     latest_art = next((a for a in info["artifacts"] if a["version"] == info["tag"]), None)

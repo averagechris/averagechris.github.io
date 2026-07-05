@@ -32,6 +32,20 @@ Shared release helpers live under `lib.fleet.core`; Rust repos use
 The preset accepts `ciExtraInputs` for extra PATH packages in the ci-* apps
 (e.g. ctx needs python3 because its CLI tests spawn plugin helpers).
 
+Fleet Nix formatting standard: use Alejandra through a quiet wrapper (`alejandra
+-q`, defaulting no-arg `nix fmt` to formatting `.`). New scaffolds should expose
+that wrapper as `formatter`; existing projects may still need a future cleanup
+pass to replace nixfmt/raw Alejandra formatters.
+
+New project bootstrap is `nix run .#new-project` from the target directory. It
+infers the project name from the directory unless `--name` is provided and writes
+public `.averagechris-project.toml` metadata, but intentionally does **not**
+mutate this site checkout or edit `fleet.toml`/`projects.toml`. Site enrollment
+automation is deferred; revisit a workflow driven by todos/workctl so Chris can
+review and apply registry updates explicitly. Default homepage tier metadata is
+`more`; use `--featured` only to mark card intent. Remote usage should include
+`--accept-flake-config` so the averagechris-dotfiles Cachix substituter is used.
+
 ## sourcehut CI quirks (hard-won — trust these)
 
 - sr.ht anti-scraper defenses tarpit BOTH python-urllib AND git's default
@@ -43,9 +57,10 @@ The preset accepts `ciExtraInputs` for extra PATH packages in the ci-* apps
   manifest's environment works without extra ceremony.
 - CI pulls from the `averagechris-dotfiles` cachix cache: every new build
   manifest should copy the NIX_CONFIG substituter block from
-  `.builds/refresh-pages.yml`. thorny's hourly `fleet-cache-warmer` pushes
-  the site's `fleet-ci-closure` and each fleet repo's x86_64-linux
-  `release-artifact` at main (see dotfiles docs/thorny.md).
+  `.builds/refresh-pages.yml`. `.builds/cache-flake.yml` builds and pushes this
+  repo's generic `.#flake-output-cache` closure for non-website flake outputs;
+  thorny's hourly `fleet-cache-warmer` still pushes each fleet repo's
+  x86_64-linux `release-artifact` at main (see dotfiles docs/thorny.md).
 - Fetching raw CI logs (hut can't): token lives on suremac at
   `~/Library/Application Support/hut/config`; then
   `curl -H "Authorization: Bearer $tok" https://builds.sr.ht/query/log/<job>/<task>/log`.

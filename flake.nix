@@ -1,6 +1,11 @@
 {
   description = "Root homepage for averagechris.srht.site";
 
+  nixConfig = {
+    extra-substituters = ["https://averagechris-dotfiles.cachix.org"];
+    extra-trusted-public-keys = ["averagechris-dotfiles.cachix.org-1:VwJkl5dG1+xGDY5x884mH/kVwwpgwBAdBKIF3BZiia4="];
+  };
+
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
     flake-utils.url = "github:numtide/flake-utils";
@@ -11,7 +16,13 @@
     nixpkgs,
     flake-utils,
   }:
-    {lib = import ./nix/fleet-apps.nix {lib = nixpkgs.lib;};}
+    {
+      lib = import ./nix/fleet-apps.nix {lib = nixpkgs.lib;};
+      templates.rust-cli = {
+        path = ./templates/rust-cli;
+        description = "Minimal Rust CLI wired to averagechris fleet release conventions. Use .#new-project for a named/idempotent scaffold.";
+      };
+    }
     // flake-utils.lib.eachDefaultSystem (
       system: let
         pkgs = nixpkgs.legacyPackages.${system};
@@ -31,19 +42,13 @@
           );
         };
 
-        mkAppWithInputs = name: runtimeInputs: script: {
-          type = "app";
-          program = pkgs.lib.getExe (
-            pkgs.writeShellApplication {
-              inherit name runtimeInputs;
-              text = script;
-            }
-          );
-        };
-
         buildPagesScript = pkgs.writeShellApplication {
           name = "build-pages";
-          runtimeInputs = [python pkgs.git pkgs.curl];
+          runtimeInputs = [
+            python
+            pkgs.git
+            pkgs.curl
+          ];
           text = ''
             ${repoScripts}
             exec python3 scripts/build_pages.py "$@"
@@ -52,10 +57,40 @@
 
         refreshPagesScript = pkgs.writeShellApplication {
           name = "refresh-pages";
-          runtimeInputs = [python pkgs.hut pkgs.git pkgs.curl];
+          runtimeInputs = [
+            python
+            pkgs.hut
+            pkgs.git
+            pkgs.curl
+          ];
           text = ''
             ${repoScripts}
             exec python3 scripts/refresh_pages.py "$@"
+          '';
+        };
+
+        newProjectScript = pkgs.writeShellApplication {
+          name = "new-project";
+          runtimeInputs = [
+            pkgs.python3
+            pkgs.jujutsu
+            pkgs.cargo
+            pkgs.nix
+          ];
+          text = ''
+            exec python3 ${./scripts/new_project.py} "$@"
+          '';
+        };
+
+        nixFormatter = pkgs.writeShellApplication {
+          name = "alejandra";
+          runtimeInputs = [pkgs.alejandra];
+          text = ''
+            if [[ $# -eq 0 ]]; then
+              exec alejandra -q .
+            fi
+
+            exec alejandra -q "$@"
           '';
         };
 
@@ -65,6 +100,42 @@
           repo_root="$(git rev-parse --show-toplevel 2>/dev/null || jj root)"
           cd "$repo_root"
         '';
+
+        # Closure used by .builds/cache-flake.yml. Keep this generic so adding
+        # non-website packages/apps/devshells/formatters automatically warms
+        # them without having to edit the build manifest. Website publisher
+        # outputs stay in fleet-ci-closure / the publish jobs.
+        websiteAppNames = [
+          "build-pages"
+          "publish-pages"
+          "refresh-pages"
+          "serve"
+        ];
+        uncachedPackageNames = [
+          "flake-output-cache"
+          "fleet-ci-closure"
+        ];
+        appProgramRoot = program: builtins.dirOf (builtins.dirOf program);
+        flakeOutputCache = let
+          cachePaths = let
+            packageOutputs = self.packages.${system} or {};
+            appOutputs = self.apps.${system} or {};
+            cacheablePackageNames = builtins.filter (name: !(builtins.elem name uncachedPackageNames)) (builtins.attrNames packageOutputs);
+            cacheableAppNames = builtins.filter (name: !(builtins.elem name websiteAppNames)) (builtins.attrNames appOutputs);
+          in
+            (map (name: packageOutputs.${name}) cacheablePackageNames)
+            ++ (map (name: appProgramRoot appOutputs.${name}.program) cacheableAppNames)
+            ++ [
+              self.devShells.${system}.default
+              self.formatter.${system}
+            ];
+        in
+          pkgs.runCommand "averagechris-site-flake-output-cache" {} ''
+            mkdir -p "$out/nix-support"
+            cat > "$out/nix-support/cache-paths" <<'EOF'
+            ${builtins.concatStringsSep "\n" (map toString cachePaths)}
+            EOF
+          '';
       in {
         apps = {
           build-pages = {
@@ -104,6 +175,11 @@
             exec python3 scripts/add_project.py "$@"
           '';
 
+          new-project = {
+            type = "app";
+            program = pkgs.lib.getExe newProjectScript;
+          };
+
           note = mkApp "note" ''
             ${repoScripts}
             exec python3 scripts/note.py "$@"
@@ -127,6 +203,7 @@
         devShells.default = pkgs.mkShell {
           packages = [
             python
+            pkgs.alejandra
             pkgs.hut
           ];
         };
@@ -142,7 +219,10 @@
           ];
         };
 
-        formatter = pkgs.nixfmt-rfc-style;
+        packages.new-project = newProjectScript;
+        packages.flake-output-cache = flakeOutputCache;
+
+        formatter = nixFormatter;
       }
     );
 }

@@ -1,0 +1,52 @@
+image: nixos/unstable
+arch: x86_64
+oauth: git.sr.ht/OBJECTS:RW git.sr.ht/PROFILE:RO git.sr.ht/REPOSITORIES:RO builds.sr.ht/JOBS:RW builds.sr.ht/SECRETS:RO
+environment:
+  NIX_CONFIG: |
+    experimental-features = nix-command flakes
+    extra-substituters = https://averagechris-dotfiles.cachix.org
+    extra-trusted-public-keys = averagechris-dotfiles.cachix.org-1:VwJkl5dG1+xGDY5x884mH/kVwwpgwBAdBKIF3BZiia4=
+sources:
+  - https://git.sr.ht/~averagechris/example-cli
+tasks:
+  - release-artifact: |
+      cd example-cli
+      nix build .#release-artifact --out-link result-release-artifact
+      mkdir -p ~/artifacts
+      cp -p result-release-artifact/* ~/artifacts/
+  - upload-and-refresh: |
+      cd example-cli
+      hut() { nix shell nixpkgs#hut --command hut "$@"; }
+      version="$(awk '/^\[package\]/{s=1} s && /^version = /{gsub(/"/,"",$3); print $3; exit}' Cargo.toml)"
+      tag="v${version#v}"
+      commit="$(git rev-parse HEAD)"
+
+      for artifact in result-release-artifact/*.tar.gz; do
+        hut git artifact upload -r example-cli --rev "$tag" "$artifact" "$artifact.sha256"
+      done
+
+      manifest="$(mktemp)"
+      cat > "$manifest" <<EOF
+      image: nixos/unstable
+      arch: x86_64
+      oauth: pages.sr.ht/PAGES:RW
+      environment:
+        NIX_CONFIG: |
+          experimental-features = nix-command flakes
+          extra-substituters = https://averagechris-dotfiles.cachix.org
+          extra-trusted-public-keys = averagechris-dotfiles.cachix.org-1:VwJkl5dG1+xGDY5x884mH/kVwwpgwBAdBKIF3BZiia4=
+        TRIGGER_SOURCE: release
+        TRIGGER_PROJECT: example-cli
+        TRIGGER_TAG: $tag
+        TRIGGER_SHA: $commit
+      sources:
+        - https://git.sr.ht/~averagechris/averagechris.srht.site
+      tasks:
+        - refresh: |
+            cd averagechris.srht.site
+            nix run .#refresh-pages
+      EOF
+      hut builds submit "$manifest" --note "site refresh: example-cli $tag" --visibility unlisted
+artifacts:
+  - artifacts/example-cli-v0.1.0-x86_64-linux.tar.gz
+  - artifacts/example-cli-v0.1.0-x86_64-linux.tar.gz.sha256
