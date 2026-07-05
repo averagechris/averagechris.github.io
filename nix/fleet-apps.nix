@@ -73,7 +73,7 @@
           set -euo pipefail
           revision="@"; while [[ $# -gt 0 ]]; do case "$1" in --revision) revision="$2"; shift 2;; -h|--help) printf 'usage: release-tag [--revision REV]\n'; exit 0;; *) printf 'unknown argument: %s\n' "$1" >&2; exit 1;; esac; done
           repo_root="$(git rev-parse --show-toplevel 2>/dev/null || jj root)"; cd "$repo_root"
-          version="$(python3 -c 'import pathlib,tomllib; data=tomllib.load(open(${q versionFile},"rb")); v=${versionExpr}; assert isinstance(v,str) and v; print(v)')"
+          version="$(VERSION_FILE=${q versionFile} python3 -c 'import os,tomllib; data=tomllib.load(open(os.environ["VERSION_FILE"],"rb")); v=${versionExpr}; assert isinstance(v,str) and v; print(v)')"
           [[ "$version" =~ ^v?[0-9]+\.[0-9]+\.[0-9]+$ ]] || { printf 'version must be semver\n' >&2; exit 1; }
           tag="v''${version#v}"
           [[ -z "$(git ls-remote --tags origin "refs/tags/$tag" 2>/dev/null)" ]] || { printf 'remote tag exists: %s\n' "$tag" >&2; exit 1; }
@@ -135,7 +135,7 @@
           version=""; revision="@"; validate=1; tag_release=1; build_artifact=1; upload_artifact=1; submit_refresh=1; submit_linux_build=0; linux_manifest=${q linuxManifest}
           while [[ $# -gt 0 ]]; do case "$1" in --version) version="$2"; shift 2;; --revision) revision="$2"; shift 2;; --skip-validate) validate=0; shift;; --skip-tag) tag_release=0; shift;; --skip-artifact) build_artifact=0; shift;; --skip-upload) upload_artifact=0; shift;; --skip-refresh) submit_refresh=0; shift;; --submit-linux-build) submit_linux_build=1; shift;; -h|--help) printf 'usage: release [--version X.Y.Z] [--submit-linux-build] [--skip-*]\n'; exit 0;; *) printf 'unknown argument: %s\n' "$1" >&2; exit 1;; esac; done
           args=(); [[ -n "$version" ]] && args=(--version "$version"); nix run .#prepare-release -- "''${args[@]}"
-          version="$(python3 -c 'import tomllib; data=tomllib.load(open(${q versionFile},"rb")); print(${versionExpr})')"; tag="v''${version#v}"
+          version="$(VERSION_FILE=${q versionFile} python3 -c 'import os,tomllib; data=tomllib.load(open(os.environ["VERSION_FILE"],"rb")); print(${versionExpr})')"; tag="v''${version#v}"
           if [[ -d .jj && -z "$(jj log -r @ --no-graph --color=never -T 'description.first_line()')" ]]; then jj describe -m "chore: release $tag"; fi
           [[ $validate -eq 0 ]] || { ${validateScript}; }
           if [[ -d .jj ]]; then commit="$(jj log -r "$revision" --no-graph --color=never -T 'commit_id')"; else commit="$(git rev-parse "$revision")"; fi
