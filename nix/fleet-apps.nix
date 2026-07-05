@@ -8,6 +8,14 @@
   core = rec {
     # Core release building blocks. Presets wire language-specific version and
     # validation behavior while keeping the fleet command names stable.
+    #
+    # Linux release manifests (builds/release-linux-x86_64.yml) run on the
+    # nixos/unstable image, which has NO system python3 or hut on PATH — use
+    # awk/sed for version extraction and `nix shell nixpkgs#hut --command hut`
+    # for uploads/submits (see workctl's manifest for the reference shape).
+    # Required oauth grants for the job:
+    #   git.sr.ht/OBJECTS:RW builds.sr.ht/JOBS:RW meta.sr.ht/PROFILE:RO
+    # (sr.ht pre-provisions ~/.config/hut/config from the grant.)
     mkPrepareRelease = {
       pkgs,
       pname,

@@ -3,7 +3,7 @@
 
 from __future__ import annotations
 
-import argparse, json, os, pathlib, re, subprocess, sys, time, tomllib, urllib.error, urllib.request
+import argparse, json, os, pathlib, re, subprocess, sys, time, tomllib
 
 SEMVER = re.compile(r"^v\d+\.\d+\.\d+$")
 
@@ -28,20 +28,51 @@ def ls(repo: str) -> tuple[str, str]:
     _, latest, main = ls_refs(repo)
     return (latest, main)
 
-def fingerprint(root: pathlib.Path) -> dict[str, dict[str, str]]:
-    fleet = tomllib.loads((root / "fleet.toml").read_text())["repos"]
-    return {r["pages_subdir"]: {"tag": (t := ls(r.get("srht_repo", r["name"])))[0], "main_sha": t[1]} for r in fleet}
+PLATFORMS = ("aarch64-darwin", "x86_64-darwin", "aarch64-linux", "x86_64-linux")
+USER_AGENT = "averagechris-fleet-pages (+https://averagechris.srht.site)"
+
+def probe(url: str) -> bool:
+    r = subprocess.run(
+        ["curl", "-sI", "-o", "/dev/null", "-w", "%{http_code}", "--max-time", "30",
+         "--retry", "1", "--user-agent", USER_AGENT, url],
+        stdout=subprocess.PIPE, text=True, timeout=120)
+    return r.stdout.strip() == "200"
+
+def fingerprint(root: pathlib.Path) -> dict[str, dict]:
+    """Latest tag + main sha + which platform artifacts exist on the latest tag.
+    Artifacts are part of the fingerprint so a late-arriving Linux build still
+    triggers a republish of an already-published tag."""
+    out: dict[str, dict] = {}
+    for r in tomllib.loads((root / "fleet.toml").read_text())["repos"]:
+        repo = r.get("srht_repo", r["name"])
+        tag, main = ls(repo)
+        artifacts = []
+        if tag:
+            prefix = r.get("artifact_prefix", r["name"])
+            for platform in PLATFORMS:
+                name = f"{prefix}-{tag}-{platform}.tar.gz"
+                if probe(f"https://git.sr.ht/~averagechris/{repo}/refs/download/{tag}/{name}"):
+                    artifacts.append(name)
+        out[r["pages_subdir"]] = {"tag": tag, "main_sha": main, "artifacts": sorted(artifacts)}
+    return out
 
 def live_state(domain: str) -> dict:
+    r = subprocess.run(
+        ["curl", "-sS", "--max-time", "60", "--retry", "1", "--user-agent", USER_AGENT,
+         f"https://{domain}/state.json"],
+        stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=180)
     try:
-        with urllib.request.urlopen(f"https://{domain}/state.json", timeout=30) as r:
-            return json.load(r)
+        return json.loads(r.stdout)
     except Exception:
         return {"projects": {}}
 
-def live_fingerprint(domain: str) -> dict[str, dict[str, str]]:
+def live_fingerprint(domain: str) -> dict[str, dict]:
     state = live_state(domain)
-    return {k: {"tag": v.get("tag", ""), "main_sha": v.get("main_sha", "")} for k, v in state.get("projects", {}).items()}
+    fp: dict[str, dict] = {}
+    for k, v in state.get("projects", {}).items():
+        artifacts = sorted(a.get("name", "") for a in v.get("artifacts", []) if a.get("version") == v.get("tag"))
+        fp[k] = {"tag": v.get("tag", ""), "main_sha": v.get("main_sha", ""), "artifacts": artifacts}
+    return fp
 
 def wait_for_trigger(root: pathlib.Path) -> None:
     project, tag = os.environ.get("TRIGGER_PROJECT"), os.environ.get("TRIGGER_TAG")
