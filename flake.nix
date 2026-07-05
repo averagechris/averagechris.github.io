@@ -42,6 +42,8 @@
         };
 
         repoScripts = ''
+          export PYTHONUNBUFFERED=1
+          export GIT_TERMINAL_PROMPT=0
           repo_root="$(git rev-parse --show-toplevel 2>/dev/null || jj root)"
           cd "$repo_root"
         '';

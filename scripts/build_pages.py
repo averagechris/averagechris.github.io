@@ -223,7 +223,10 @@ def fetch(url: str, *, soft: bool = False) -> bytes | None:
 
 
 def run_text(command: list[str]) -> str:
-    result = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    try:
+        result = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=120)
+    except subprocess.TimeoutExpired:
+        fail(f"command timed out after 120s: {' '.join(command)}")
     if result.returncode != 0:
         fail(f"command failed: {' '.join(command)}\n{result.stderr.strip()}")
     return result.stdout
@@ -344,6 +347,7 @@ def build_fleet_projects(repo: pathlib.Path, config: dict, site_dir: pathlib.Pat
         if not p.get("downloads", True) or p["path"] not in fleet:
             continue
         f = {**fleet[p["path"]], "description": p.get("description", "")}
+        print(f"  {p['path']}: resolving tags", flush=True)
         tags, main_sha = ls_remote(f["srht_repo"])
         versions = sorted(tags, key=semver_key, reverse=True)
         if not versions:
