@@ -201,6 +201,9 @@
     lockPackages ? [pname],
     workspaceDepPins ? [],
     changelog ? "CHANGELOG.md",
+    # Extra packages on PATH for the ci-* apps, e.g. interpreters that tests
+    # spawn as subprocesses (CI images have no system python3 etc.).
+    ciExtraInputs ? [],
     ...
   }: let
     cargoVersionExpr =
@@ -213,6 +216,7 @@
       then versionToml.workspace.package.version
       else versionToml.package.version;
     rustToolchain = with pkgs; [cargo clippy rustc rustfmt stdenv.cc] ++ lib.optionals stdenv.isDarwin [libiconv];
+    ciToolchain = rustToolchain ++ ciExtraInputs;
     darwinLinkEnv = lib.optionalString pkgs.stdenv.isDarwin ''
       export LIBRARY_PATH="${pkgs.libiconv}/lib''${LIBRARY_PATH:+:$LIBRARY_PATH}"
     '';
@@ -273,17 +277,17 @@
     };
     ciFmt = pkgs.writeShellApplication {
       name = "ci-fmt";
-      runtimeInputs = rustToolchain;
+      runtimeInputs = ciToolchain;
       text = darwinLinkEnv + "\ncargo fmt --all -- --check\n";
     };
     ciClippy = pkgs.writeShellApplication {
       name = "ci-clippy";
-      runtimeInputs = rustToolchain;
+      runtimeInputs = ciToolchain;
       text = darwinLinkEnv + "\ncargo clippy --locked --workspace --all-targets -- -D warnings\n";
     };
     ciTest = pkgs.writeShellApplication {
       name = "ci-test";
-      runtimeInputs = rustToolchain;
+      runtimeInputs = ciToolchain;
       text = darwinLinkEnv + "\ncargo test --workspace\n";
     };
     releaseArtifact = core.mkReleaseTarball {
