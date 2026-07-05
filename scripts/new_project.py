@@ -465,7 +465,7 @@ def release_manifest(args: argparse.Namespace) -> str:
           commit="$(git rev-parse HEAD)"
 
           set -- result-release-artifact/*.tar.gz
-          [ -e "$1" ] || {{ printf 'no release artifacts found\n' >&2; exit 1; }}
+          [ -e "$1" ] || {{ printf '%s\\n' 'no release artifacts found' >&2; exit 1; }}
           for artifact do
             hut git artifact upload -r {args.srht_repo} --rev "$tag" "$artifact" "$artifact.sha256"
           done
