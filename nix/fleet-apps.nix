@@ -142,7 +142,9 @@
           if [[ $tag_release -eq 1 ]]; then nix run .#release-tag -- --revision "$commit"; if [[ -d .jj ]]; then jj bookmark set main --revision "$commit"; jj git push --remote origin --bookmark main; fi; fi
           if [[ $build_artifact -eq 1 ]]; then nix build .#release-artifact --out-link result-release-artifact; fi
           if [[ $upload_artifact -eq 1 ]]; then for f in result-release-artifact/*.tar.gz; do hut git artifact upload -r ${q srhtRepo} --rev "$tag" "$f" "$f.sha256"; done; fi
-          if [[ $submit_refresh -eq 1 ]]; then ${refreshTrigger}; fi
+          if [[ $submit_refresh -eq 1 ]]; then
+            ${refreshTrigger}
+          fi
           if [[ $submit_linux_build -eq 1 ]]; then hut builds submit "$linux_manifest" --note "${pname} $tag linux release" --tags "${pname}/$tag/release" --visibility unlisted; fi
         '';
       };
