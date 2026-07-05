@@ -250,7 +250,16 @@ def load_fleet(repo: pathlib.Path) -> dict[str, dict]:
 
 
 def ls_remote(srht_repo: str) -> tuple[dict[str, str], str]:
-    out = run_text(["git", "ls-remote", f"https://git.sr.ht/~averagechris/{srht_repo}"])
+    # git's default UA gets tarpitted by sr.ht's anti-scraper defenses on
+    # datacenter IPs just like python-urllib (observed as a silent 120s hang
+    # in CI); send the same UA curl uses, and retry once since the tarpit
+    # is intermittent.
+    command = ["git", "-c", f"http.userAgent={USER_AGENT}", "ls-remote",
+               f"https://git.sr.ht/~averagechris/{srht_repo}"]
+    try:
+        out = run_text(command)
+    except SystemExit:
+        out = run_text(command)
     tags: dict[str, str] = {}
     main_sha = ""
     for line in out.splitlines():

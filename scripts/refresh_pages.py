@@ -13,7 +13,15 @@ def run(cmd: list[str], **kw) -> subprocess.CompletedProcess:
 
 def ls_refs(repo: str) -> tuple[list[str], str, str]:
     """Return (all semver tags, latest tag, main sha) for a fleet repo."""
-    out = subprocess.check_output(["git", "ls-remote", f"https://git.sr.ht/~averagechris/{repo}"], text=True)
+    # git's default UA gets tarpitted by sr.ht anti-scraper defenses on
+    # datacenter IPs (silent multi-minute hang); use the curl UA and retry
+    # once, with a hard timeout so the job fails loudly instead of hanging.
+    command = ["git", "-c", f"http.userAgent={USER_AGENT}", "ls-remote",
+               f"https://git.sr.ht/~averagechris/{repo}"]
+    try:
+        out = subprocess.check_output(command, text=True, timeout=120)
+    except (subprocess.TimeoutExpired, subprocess.CalledProcessError):
+        out = subprocess.check_output(command, text=True, timeout=120)
     tags, main = [], ""
     for line in out.splitlines():
         sha, ref = line.split("\t", 1)
