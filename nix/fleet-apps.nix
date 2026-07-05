@@ -78,7 +78,7 @@
           tag="v''${version#v}"
           [[ -z "$(git ls-remote --tags origin "refs/tags/$tag" 2>/dev/null)" ]] || { printf 'remote tag exists: %s\n' "$tag" >&2; exit 1; }
           if [[ -d .jj ]]; then commit="$(jj log -r "$revision" --no-graph --color=never -T 'commit_id')"; else commit="$(git rev-parse "$revision")"; fi
-          git tag -fa "$tag" -m "${pname} $tag" "$commit"
+          git -c tag.gpgSign=false tag -fa "$tag" -m "${pname} $tag" "$commit"
           git push origin "refs/tags/$tag"
         '';
       };
