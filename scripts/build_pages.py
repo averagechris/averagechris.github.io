@@ -44,7 +44,7 @@ DOC_PAGES = (
     "sample-review.html",
 )
 PROJECT_INFO_PAGES = DOC_PAGES
-MAX_DOC_BYTES = 1_000_000
+MAX_DOC_BYTES = 2_000_000
 RELEASE_DATES_HEADER = """# Cache of release tag dates, updated automatically by build-pages when
 # local fleet repos are available. Safe to commit; CI reads it as-is.
 [dates]
