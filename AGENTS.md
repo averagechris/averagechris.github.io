@@ -29,6 +29,27 @@ in `fleet.toml` — read them before touching a repo.
 Check conformance: `nix run .#fleet-status` (add `--nix` to verify flake apps).
 Shared release helpers live under `lib.fleet.core`; Rust repos use
 `lib.fleet.presets.rust` via the backward-compatible `lib.mkFleetApps` alias.
+The preset accepts `ciExtraInputs` for extra PATH packages in the ci-* apps
+(e.g. ctx needs python3 because its CLI tests spawn plugin helpers).
+
+## sourcehut CI quirks (hard-won — trust these)
+
+- sr.ht anti-scraper defenses tarpit BOTH python-urllib AND git's default
+  user agent from datacenter IPs (silent multi-minute hangs in CI). Any
+  fetch or `git ls-remote` against git.sr.ht in CI must send a real UA
+  (see `USER_AGENT` in scripts/) and should retry once.
+- The nixos/unstable build image has no system python3 or hut; the `build`
+  user IS in trusted-users, so `NIX_CONFIG` `extra-substituters` in a
+  manifest's environment works without extra ceremony.
+- CI pulls from the `averagechris-dotfiles` cachix cache: every new build
+  manifest should copy the NIX_CONFIG substituter block from
+  `.builds/refresh-pages.yml`. thorny's hourly `fleet-cache-warmer` pushes
+  the site's `fleet-ci-closure` and each fleet repo's x86_64-linux
+  `release-artifact` at main (see dotfiles docs/thorny.md).
+- Fetching raw CI logs (hut can't): token lives on suremac at
+  `~/Library/Application Support/hut/config`; then
+  `curl -H "Authorization: Bearer $tok" https://builds.sr.ht/query/log/<job>/<task>/log`.
+  The public log URLs are behind a go-away bot wall.
 
 ## Dispatching maintenance subagents
 
