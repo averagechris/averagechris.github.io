@@ -23,6 +23,33 @@ from dataclasses import dataclass, field
 
 
 DEFAULT_AUTHOR = "Christopher Cummings"
+USER_AGENT = "averagechris-fleet-pages (+https://averagechris.srht.site)"
+RESERVED_OUTPUT_NAMES = {
+    "ci-audit",
+    "ci-clippy",
+    "ci-deny",
+    "ci-fmt",
+    "ci-machete",
+    "ci-sort",
+    "ci-test",
+    "default",
+    "prepare-release",
+    "release",
+    "release-artifact",
+    "release-tag",
+}
+NIX_KEYWORDS = {
+    "assert",
+    "else",
+    "if",
+    "in",
+    "inherit",
+    "let",
+    "or",
+    "rec",
+    "then",
+    "with",
+}
 
 
 @dataclass
@@ -84,6 +111,12 @@ def validate_project_name(name: str) -> str:
 def validate_binary_name(name: str) -> str:
     if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_-]*", name):
         raise SystemExit("error: binary name contains characters Cargo/Nix cannot handle cleanly")
+    return name
+
+
+def validate_output_name(name: str, *, kind: str) -> str:
+    if name in RESERVED_OUTPUT_NAMES or name in NIX_KEYWORDS:
+        raise SystemExit(f"error: {kind} name {name!r} is reserved by the generated Nix flake")
     return name
 
 
@@ -330,6 +363,9 @@ def release_manifest(args: argparse.Namespace) -> str:
     arch: x86_64
     oauth: git.sr.ht/OBJECTS:RW builds.sr.ht/JOBS:RW meta.sr.ht/PROFILE:RO
     environment:
+      GIT_CONFIG_COUNT: "1"
+      GIT_CONFIG_KEY_0: http.userAgent
+      GIT_CONFIG_VALUE_0: "{USER_AGENT}"
       NIX_CONFIG: |
         experimental-features = nix-command flakes
         extra-substituters = https://averagechris-dotfiles.cachix.org
@@ -363,6 +399,9 @@ def release_manifest(args: argparse.Namespace) -> str:
           arch: x86_64
           oauth: pages.sr.ht/PAGES:RW
           environment:
+            GIT_CONFIG_COUNT: "1"
+            GIT_CONFIG_KEY_0: http.userAgent
+            GIT_CONFIG_VALUE_0: "{USER_AGENT}"
             NIX_CONFIG: |
               experimental-features = nix-command flakes
               extra-substituters = https://averagechris-dotfiles.cachix.org
@@ -641,17 +680,19 @@ def scaffold(args: argparse.Namespace, log: ActionLog) -> None:
 
 def refuse_site_checkout(args: argparse.Namespace) -> None:
     target = args.dir.resolve()
-    site_markers = [
-        target / "fleet.toml",
-        target / "projects.toml",
-        target / "scripts" / "new_project.py",
-    ]
-    if all(marker.exists() for marker in site_markers):
-        raise SystemExit(
-            "error: refusing to scaffold into the averagechris.srht.site checkout; "
-            "run this from the new project directory via the remote flake URL, "
-            "or pass --dir /path/to/new-project"
-        )
+    start = target if target.exists() else target.parent
+    for candidate in (start, *start.parents):
+        site_markers = [
+            candidate / "fleet.toml",
+            candidate / "projects.toml",
+            candidate / "scripts" / "new_project.py",
+        ]
+        if all(marker.exists() for marker in site_markers):
+            raise SystemExit(
+                "error: refusing to scaffold inside the averagechris.srht.site checkout; "
+                "run this from the new project directory via the remote flake URL, "
+                "or pass --dir /path/to/new-project outside this repo"
+            )
 
 
 def init_jj(args: argparse.Namespace, log: ActionLog) -> None:
@@ -741,8 +782,8 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
 
     args.dir = args.dir.expanduser()
     selected_name = args.name_override or args.name or args.dir.resolve().name
-    args.name = validate_project_name(selected_name)
-    args.binary = validate_binary_name(args.binary or args.name)
+    args.name = validate_output_name(validate_project_name(selected_name), kind="project")
+    args.binary = validate_output_name(validate_binary_name(args.binary or args.name), kind="binary")
     args.srht_repo = validate_project_name(args.srht_repo or args.name)
     args.artifact_prefix = validate_project_name(args.artifact_prefix or args.name)
     args.pages_subdir = validate_project_name(args.pages_subdir or args.name)

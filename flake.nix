@@ -115,6 +115,9 @@
           "flake-output-cache"
           "fleet-ci-closure"
         ];
+        # Cache app closures by linking the derivation root of conventional
+        # $out/bin/<program> app paths. If a future app uses a nonstandard
+        # program layout, give it a package output instead of relying on this.
         appProgramRoot = program: builtins.dirOf (builtins.dirOf program);
         flakeOutputCache = let
           cachePaths = let

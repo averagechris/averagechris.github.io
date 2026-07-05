@@ -6,15 +6,13 @@ The shared interface is a set of Nix flake apps. In any fleet repo, the release 
 
 ```sh
 nix run .#prepare-release -- --version X.Y.Z   # bump version, date CHANGELOG, fix builds manifest
-nix run .#release-tag                          # jj tag vX.Y.Z + push + move main
+nix run .#release-tag                          # annotated vX.Y.Z tag + push
 nix build .#release-artifact                   # reproducible tarball + .sha256
-nix run .#build-pages [-- --include-existing-downloads]
-nix run .#publish-pages                        # hut pages publish -s /<subdir>
-nix run .#release -- --version X.Y.Z [--publish-pages] [--submit-linux-build] [--skip-*]
+nix run .#release -- --version X.Y.Z [--submit-linux-build] [--skip-*]
 nix run .#ci-fmt / ci-clippy / ci-test         # lint gates; repos may add extras
 ```
 
-That gives every project the same knobs: prepare a version, tag it, build a reproducible artifact, build the downloads page, publish the downloads page, or run the whole thing. The CI gates are also flake apps, because if a command matters, I want it named and reproducible instead of hiding in somebody's tab history.
+That gives every project the same knobs: prepare a version, tag it, build a reproducible artifact, or run the whole release path. The release app uploads SourceHut tag artifacts and submits a root-site refresh instead of publishing Pages from each repo. The CI gates are also flake apps, because if a command matters, I want it named and reproducible instead of hiding in somebody's tab history.
 
 The conventions are equally plain: conventional commits, a `CHANGELOG.md` with a `## Unreleased` section, `vX.Y.Z` tags, and jj-first version control. The SourceHut Linux release manifest lives at `builds/release-linux-x86_64.yml`, not under `.builds/`, so it only runs when explicitly submitted:
 
@@ -24,25 +22,17 @@ hut builds submit builds/release-linux-x86_64.yml
 
 Release artifacts are built through Nix and published with checksums. The normal output is a tarball plus a sidecar `.sha256`, and the downloads page also exposes a `manifest.json` with per-artifact hashes. I like binaries that can be downloaded without installing a package manager, but I also like knowing exactly which pile of bytes arrived. Radical platform.
 
-The website has one important SourceHut Pages wrinkle. Each project owns a subdirectory under this site. For example, `gander` publishes to `/gander/`, `ctx` publishes to `/ctx/`, and `linear-cli` publishes to `/linear-cli/`:
+The website has one important SourceHut Pages wrinkle: this repo is now the only publisher for `averagechris.srht.site`. A root publish replaces the whole site. Not updates. Replaces. Computers remain a trust exercise with invoices.
+
+So fleet repos publish durable inputs instead of Pages: annotated semver tags, tag artifacts, `CHANGELOG.md`, and optional `docs/pages/*.html` from pinned main SHAs. The homepage builder resolves those inputs, hosts recent artifacts under each project subdirectory, renders downloads/changelog pages, copies optional project docs, writes `manifest.json`, and publishes one complete root tarball.
 
 ```sh
-hut pages publish -s /<project> dist/pages.tar.gz
-```
-
-Subdirectory publishing preserves the rest of the site. The homepage repo, however, owns the root. A root publish replaces the whole site. Not updates. Replaces. Computers remain a trust exercise with invoices.
-
-So the homepage builder mirrors every already-published project subdirectory before it publishes the root. `projects.toml` must list every subdirectory that should survive a root publish, even if it is not shown on the homepage. The builder pulls the live subdirectory index, `manifest.json`, and linked download artifacts into the root tarball, then publishes that complete copy.
-
-```sh
-# add a new project card / mirrored subdirectory
+# add a new project card / downloads subdirectory
 nix run .#add-project -- <path> --description "What it does"
 
-# build the homepage tarball, mirroring existing project downloads first
+# build the homepage tarball from fleet tags/artifacts/docs
 nix run .#build-pages
 
-# preview without mirroring; guarded so I do not publish it by accident
-nix run .#build-pages -- --skip-mirror
 nix run .#serve
 
 # publish the root site
