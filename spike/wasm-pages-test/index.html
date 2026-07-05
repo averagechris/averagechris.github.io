@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>WASM Pages Test - loading</title>
+  </head>
+  <body>
+    <noscript>This verification page requires JavaScript and WebAssembly.</noscript>
+    <div id="spike-status">SPIKE_FAIL: bundle not loaded yet</div>
+    <div id="island-root"></div>
+    <script type="module">
+      import init from "./wasm_pages_test.js";
+
+      try {
+        await init();
+      } catch (error) {
+        const status = `SPIKE_FAIL: wasm init failed: ${error}`;
+        document.getElementById("spike-status").textContent = status;
+        document.title = status;
+      }
+    </script>
+  </body>
+</html>

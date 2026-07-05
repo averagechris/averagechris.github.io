@@ -4,3 +4,5 @@ __pycache__/
 *.pyc
 .rodney/
 result*
+/spike/wasm-pages-test/dist/
+/spike/wasm-pages-test/target/
