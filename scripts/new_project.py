@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import argparse
 import html
+import json
 import pathlib
 import re
 import shlex
@@ -41,6 +42,35 @@ class ActionLog:
 
 def html_escape(value: str) -> str:
     return html.escape(value, quote=True)
+
+
+def toml_string(value: str) -> str:
+    return json.dumps(value, ensure_ascii=False)
+
+
+def nix_string(value: str) -> str:
+    escaped = []
+    index = 0
+    while index < len(value):
+        if value.startswith("${", index):
+            escaped.append(r"\${")
+            index += 2
+            continue
+        char = value[index]
+        if char == "\\":
+            escaped.append(r"\\")
+        elif char == '"':
+            escaped.append(r"\"")
+        elif char == "\n":
+            escaped.append(r"\n")
+        elif char == "\r":
+            escaped.append(r"\r")
+        elif char == "\t":
+            escaped.append(r"\t")
+        else:
+            escaped.append(char)
+        index += 1
+    return '"' + "".join(escaped) + '"'
 
 
 def validate_project_name(name: str) -> str:
@@ -117,19 +147,19 @@ def cargo_toml(args: argparse.Namespace) -> str:
     repo = f"https://git.sr.ht/~averagechris/{args.srht_repo}"
     return f"""
     [package]
-    name = "{args.name}"
-    version = "{args.version}"
-    edition = "{args.edition}"
-    description = "{args.description}"
-    authors = ["{args.author}"]
-    license = "{args.license}"
-    repository = "{repo}"
-    homepage = "{repo}"
+    name = {toml_string(args.name)}
+    version = {toml_string(args.version)}
+    edition = {toml_string(args.edition)}
+    description = {toml_string(args.description)}
+    authors = [{toml_string(args.author)}]
+    license = {toml_string(args.license)}
+    repository = {toml_string(repo)}
+    homepage = {toml_string(repo)}
     readme = "README.md"
     categories = ["command-line-utilities"]
 
     [[bin]]
-    name = "{args.binary}"
+    name = {toml_string(args.binary)}
     path = "src/main.rs"
 
     [dependencies]
@@ -144,7 +174,7 @@ def cargo_toml(args: argparse.Namespace) -> str:
 def flake_nix(args: argparse.Namespace) -> str:
     return f"""
     {{
-      description = "{args.description}";
+      description = {nix_string(args.description)};
 
       nixConfig = {{
         extra-substituters = ["https://averagechris-dotfiles.cachix.org"];
@@ -298,7 +328,7 @@ def release_manifest(args: argparse.Namespace) -> str:
     return f"""
     image: nixos/unstable
     arch: x86_64
-    oauth: git.sr.ht/OBJECTS:RW git.sr.ht/PROFILE:RO git.sr.ht/REPOSITORIES:RO builds.sr.ht/JOBS:RW builds.sr.ht/SECRETS:RO
+    oauth: git.sr.ht/OBJECTS:RW builds.sr.ht/JOBS:RW meta.sr.ht/PROFILE:RO
     environment:
       NIX_CONFIG: |
         experimental-features = nix-command flakes
@@ -308,18 +338,22 @@ def release_manifest(args: argparse.Namespace) -> str:
       - https://git.sr.ht/~averagechris/{args.srht_repo}
     tasks:
       - release-artifact: |
+          set -eu
           cd {args.srht_repo}
           nix build .#release-artifact --out-link result-release-artifact
           mkdir -p ~/artifacts
           cp -p result-release-artifact/* ~/artifacts/
       - upload-and-refresh: |
+          set -eu
           cd {args.srht_repo}
           hut() {{ nix shell nixpkgs#hut --command hut "$@"; }}
           version="$(awk '/^\\[package\\]/{{s=1}} s && /^version = /{{gsub(/"/,"",$3); print $3; exit}}' Cargo.toml)"
           tag="v${{version#v}}"
           commit="$(git rev-parse HEAD)"
 
-          for artifact in result-release-artifact/*.tar.gz; do
+          set -- result-release-artifact/*.tar.gz
+          [ -e "$1" ] || {{ printf 'no release artifacts found\n' >&2; exit 1; }}
+          for artifact do
             hut git artifact upload -r {args.srht_repo} --rev "$tag" "$artifact" "$artifact.sha256"
           done
 
@@ -496,14 +530,14 @@ def enrollment_manifest(args: argparse.Namespace) -> str:
     # Public project metadata for future averagechris fleet enrollment.
     # This file is informational today; site registry updates are manual.
     [project]
-    name = "{args.name}"
-    description = "{args.description}"
-    pages_subdir = "{args.pages_subdir}"
-    srht_repo = "{args.srht_repo}"
-    artifact_prefix = "{args.artifact_prefix}"
-    binaries = ["{args.binary}"]
+    name = {toml_string(args.name)}
+    description = {toml_string(args.description)}
+    pages_subdir = {toml_string(args.pages_subdir)}
+    srht_repo = {toml_string(args.srht_repo)}
+    artifact_prefix = {toml_string(args.artifact_prefix)}
+    binaries = [{toml_string(args.binary)}]
     version_file = "Cargo.toml"
-    homepage_tier = "{args.tier}"
+    homepage_tier = {toml_string(args.tier)}
     downloads = true
 
     [pages]
@@ -605,6 +639,21 @@ def scaffold(args: argparse.Namespace, log: ActionLog) -> None:
         write_file(target / relative, textwrap.dedent(content), log, force=args.force)
 
 
+def refuse_site_checkout(args: argparse.Namespace) -> None:
+    target = args.dir.resolve()
+    site_markers = [
+        target / "fleet.toml",
+        target / "projects.toml",
+        target / "scripts" / "new_project.py",
+    ]
+    if all(marker.exists() for marker in site_markers):
+        raise SystemExit(
+            "error: refusing to scaffold into the averagechris.srht.site checkout; "
+            "run this from the new project directory via the remote flake URL, "
+            "or pass --dir /path/to/new-project"
+        )
+
+
 def init_jj(args: argparse.Namespace, log: ActionLog) -> None:
     if args.no_repo_init:
         log.note_skip("repository initialization disabled by --no-repo-init")
@@ -640,7 +689,7 @@ def generate_locks(args: argparse.Namespace, log: ActionLog) -> None:
             log.note_skip("cargo not found on PATH; Cargo.lock not generated")
     if not args.no_flake_lock and (target / "flake.nix").exists() and not (target / "flake.lock").exists():
         if command_exists("nix"):
-            run(["nix", "flake", "lock"], target, log)
+            run(["nix", "--accept-flake-config", "flake", "lock"], target, log)
         else:
             log.note_skip("nix not found on PATH; flake.lock not generated")
 
@@ -707,6 +756,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv or sys.argv[1:])
     log = ActionLog(dry_run=args.dry_run)
+    refuse_site_checkout(args)
     scaffold(args, log)
     init_jj(args, log)
     describe_new_change(args, log)

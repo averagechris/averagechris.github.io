@@ -14,7 +14,9 @@ sources:
   - https://git.sr.ht/~averagechris/averagechris.srht.site
 tasks:
   - warm-flake-outputs: |
+      set -eu
       cd averagechris.srht.site
       cachix authtoken --stdin < ~/.ci_secrets/cachix_token
       nix build --accept-flake-config .#flake-output-cache --out-link result-flake-output-cache
-      nix path-info --recursive ./result-flake-output-cache | cachix push averagechris-dotfiles
+      paths="$(nix path-info --recursive ./result-flake-output-cache)"
+      printf '%s\n' "$paths" | cachix push averagechris-dotfiles

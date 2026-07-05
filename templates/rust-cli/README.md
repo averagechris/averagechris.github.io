@@ -5,7 +5,7 @@ cannot rename files or merge with an existing directory. Prefer the smart
 scaffold command when starting real projects:
 
 ```sh
-nix run git+https://git.sr.ht/~averagechris/averagechris.srht.site#new-project -- --description "A SourceHut CLI"
+nix run --accept-flake-config git+https://git.sr.ht/~averagechris/averagechris.srht.site#new-project -- --description "A SourceHut CLI"
 ```
 
 After using the raw template, replace `example-cli` in `Cargo.toml`,
@@ -13,5 +13,5 @@ After using the raw template, replace `example-cli` in `Cargo.toml`,
 
 ```sh
 cargo generate-lockfile
-nix flake lock
+nix --accept-flake-config flake lock
 ```

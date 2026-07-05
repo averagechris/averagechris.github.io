@@ -43,7 +43,7 @@ DOC_PAGES = (
     "tour.html",
     "sample-review.html",
 )
-PROJECT_INFO_PAGES = ("overview.html", "example.html")
+PROJECT_INFO_PAGES = DOC_PAGES
 RELEASE_DATES_HEADER = """# Cache of release tag dates, updated automatically by build-pages when
 # local fleet repos are available. Safe to commit; CI reads it as-is.
 [dates]

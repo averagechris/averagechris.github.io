@@ -1,6 +1,6 @@
 image: nixos/unstable
 arch: x86_64
-oauth: git.sr.ht/OBJECTS:RW git.sr.ht/PROFILE:RO git.sr.ht/REPOSITORIES:RO builds.sr.ht/JOBS:RW builds.sr.ht/SECRETS:RO
+oauth: git.sr.ht/OBJECTS:RW builds.sr.ht/JOBS:RW meta.sr.ht/PROFILE:RO
 environment:
   NIX_CONFIG: |
     experimental-features = nix-command flakes
@@ -10,18 +10,22 @@ sources:
   - https://git.sr.ht/~averagechris/example-cli
 tasks:
   - release-artifact: |
+      set -eu
       cd example-cli
       nix build .#release-artifact --out-link result-release-artifact
       mkdir -p ~/artifacts
       cp -p result-release-artifact/* ~/artifacts/
   - upload-and-refresh: |
+      set -eu
       cd example-cli
       hut() { nix shell nixpkgs#hut --command hut "$@"; }
       version="$(awk '/^\[package\]/{s=1} s && /^version = /{gsub(/"/,"",$3); print $3; exit}' Cargo.toml)"
       tag="v${version#v}"
       commit="$(git rev-parse HEAD)"
 
-      for artifact in result-release-artifact/*.tar.gz; do
+      set -- result-release-artifact/*.tar.gz
+      [ -e "$1" ] || { printf 'no release artifacts found\n' >&2; exit 1; }
+      for artifact do
         hut git artifact upload -r example-cli --rev "$tag" "$artifact" "$artifact.sha256"
       done
 

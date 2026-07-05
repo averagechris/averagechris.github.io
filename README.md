@@ -26,10 +26,11 @@ for repo-internal implementation details.
 ## Usage
 
 ```sh
-# bootstrap a new Rust CLI/fleet project from the project directory
-nix run .#new-project -- --description "A SourceHut CLI"
-# from elsewhere, once this repo is pushed:
+# bootstrap a new Rust CLI/fleet project from that project directory
 nix run --accept-flake-config git+https://git.sr.ht/~averagechris/averagechris.srht.site#new-project -- --description "A SourceHut CLI"
+
+# or from this checkout, target an explicit project directory
+nix run .#new-project -- --dir ../srht --description "A SourceHut CLI"
 
 # add a new project card
 nix run .#add-project -- my-project --description "What it does"
