@@ -2,6 +2,7 @@ image: nixos/unstable
 arch: x86_64
 oauth: pages.sr.ht/PAGES:RW
 environment:
+  QA_DOMAIN: averagechris-qa.srht.site
   NIX_CONFIG: |
     experimental-features = nix-command flakes
     extra-substituters = https://averagechris-dotfiles.cachix.org
@@ -9,11 +10,14 @@ environment:
 sources:
   - https://git.sr.ht/~averagechris/averagechris.srht.site
 tasks:
-  - refresh: |
+  - publish-qa: |
       cd averagechris.srht.site
-      nix run .#refresh-pages
+      nix run .#build-pages -- --domain "$QA_DOMAIN"
+      nix run .#publish-pages -- --domain "$QA_DOMAIN"
 submitter:
   git.sr.ht:
     enabled: true
     allow-refs:
-      - refs/heads/main
+      - refs/heads/qa
+      - refs/heads/site-refactor
+      - refs/heads/site-rendering-refactor
