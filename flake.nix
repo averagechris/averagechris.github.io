@@ -41,6 +41,24 @@
           );
         };
 
+        buildPagesScript = pkgs.writeShellApplication {
+          name = "build-pages";
+          runtimeInputs = [python pkgs.git pkgs.curl];
+          text = ''
+            ${repoScripts}
+            exec python3 scripts/build_pages.py "$@"
+          '';
+        };
+
+        refreshPagesScript = pkgs.writeShellApplication {
+          name = "refresh-pages";
+          runtimeInputs = [python pkgs.hut pkgs.git pkgs.curl];
+          text = ''
+            ${repoScripts}
+            exec python3 scripts/refresh_pages.py "$@"
+          '';
+        };
+
         repoScripts = ''
           export PYTHONUNBUFFERED=1
           export GIT_TERMINAL_PROMPT=0
@@ -49,10 +67,10 @@
         '';
       in {
         apps = {
-          build-pages = mkAppWithInputs "build-pages" [python pkgs.git pkgs.curl] ''
-            ${repoScripts}
-            exec python3 scripts/build_pages.py "$@"
-          '';
+          build-pages = {
+            type = "app";
+            program = pkgs.lib.getExe buildPagesScript;
+          };
 
           publish-pages = mkApp "publish-pages" ''
             ${repoScripts}
@@ -76,10 +94,10 @@
             exec hut pages publish "$tarball" --domain "$domain" "''${site_config_args[@]}"
           '';
 
-          refresh-pages = mkAppWithInputs "refresh-pages" [python pkgs.hut pkgs.git pkgs.curl] ''
-            ${repoScripts}
-            exec python3 scripts/refresh_pages.py "$@"
-          '';
+          refresh-pages = {
+            type = "app";
+            program = pkgs.lib.getExe refreshPagesScript;
+          };
 
           add-project = mkApp "add-project" ''
             ${repoScripts}
@@ -110,6 +128,17 @@
           packages = [
             python
             pkgs.hut
+          ];
+        };
+
+        # Everything the hourly refresh CI job needs at runtime. thorny's
+        # fleet-cache-warmer builds this and pushes it to cachix so the
+        # builds.sr.ht job substitutes instead of building.
+        packages.fleet-ci-closure = pkgs.symlinkJoin {
+          name = "fleet-ci-closure";
+          paths = [
+            buildPagesScript
+            refreshPagesScript
           ];
         };
 

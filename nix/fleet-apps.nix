@@ -101,7 +101,10 @@
       arch: x86_64
       oauth: pages.sr.ht/PAGES:RW
       environment:
-        NIX_CONFIG: "experimental-features = nix-command flakes"
+        NIX_CONFIG: |
+          experimental-features = nix-command flakes
+          extra-substituters = https://averagechris-dotfiles.cachix.org
+          extra-trusted-public-keys = averagechris-dotfiles.cachix.org-1:VwJkl5dG1+xGDY5x884mH/kVwwpgwBAdBKIF3BZiia4=
         TRIGGER_SOURCE: release
         TRIGGER_PROJECT: ${subdir}
         TRIGGER_TAG: $tag

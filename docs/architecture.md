@@ -14,9 +14,12 @@ When inputs changed, it rebuilds deterministically from sourcehut, fingerprints
 again before publishing, and retries a bounded number of times so concurrent
 releases converge.
 
-Artifact downloads are cached locally under `.cache/artifacts/`. The refresh job
-is substitution-only today; a binary cache for Rust release builds may be added
-later.
+Artifact downloads are cached locally under `.cache/artifacts/`. CI jobs pull
+from the `averagechris-dotfiles` cachix cache as an extra substituter; thorny's
+hourly `fleet-cache-warmer` pushes the site's `fleet-ci-closure` package (the
+refresh job's full runtime closure) and each fleet repo's x86_64-linux
+`release-artifact` closure at main, so refresh and linux release jobs
+substitute instead of building.
 
 ## Shared fleet tooling
 
