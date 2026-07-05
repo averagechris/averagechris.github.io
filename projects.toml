@@ -1,20 +1,15 @@
 # Projects listed on https://averagechris.srht.site/
 #
-# Each [[projects]] entry renders on the homepage and (when it has a
-# downloads page) tells the site builder which subdirectory to mirror when
-# republishing the root.
+# Each [[projects]] entry renders on the homepage. Fleet project downloads/docs
+# are built centrally from sourcehut tags, tag artifacts, and pinned main files.
 #
 # Fields:
 #   path        subdirectory under the site root / stable identifier
 #   downloads   default true; false = no downloads page (card links source only,
-#               nothing is mirrored for it)
+#               no fleet downloads page is rendered for it)
 #   tier        "featured" (default, card) or "more" (compact list)
-#   listed      default true; false = mirror the subdirectory but show nothing
-#   extra_links optional links rendered after source, e.g. [{ label = "uses", url = "/uses/" }]
-#
-# IMPORTANT: every subdirectory ever published to this Pages site MUST be
-# listed here (even with `listed = false`), because a root publish replaces
-# the entire site. See README.md.
+#   listed      default true; false = keep metadata but show nothing
+#   extra_links optional links rendered before source, e.g. [{ label = "uses", url = "/uses/" }]
 #
 # Add entries with: nix run .#add-project -- <path> --description "..."
 

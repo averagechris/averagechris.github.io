@@ -2,8 +2,8 @@
 
 This repo is two things:
 
-1. **The homepage** for https://averagechris.srht.site/ (see README.md for the
-   publish model and the root-publish caveat).
+1. **The single Pages publisher** for https://averagechris.srht.site/ (see
+   README.md and docs/architecture.md for the build-from-sourcehut architecture).
 2. **The fleet control room**: `fleet.toml` registers my release-tier projects,
    which all share a standard release interface. Maintenance work across those
    repos is orchestrated from here, usually by dispatching one subagent per repo.
@@ -14,14 +14,13 @@ This repo is two things:
 nix run .#prepare-release -- --version X.Y.Z   # bump version, date CHANGELOG, fix builds manifest
 nix run .#release-tag                          # jj tag vX.Y.Z + push + move main
 nix build .#release-artifact                   # reproducible tarball + .sha256
-nix run .#build-pages [-- --include-existing-downloads]
-nix run .#publish-pages                        # hut pages publish -s /<subdir>
+nix run .#build-pages / .#publish-pages         # migrating out of projects; this repo now publishes pages
 nix run .#release -- --version X.Y.Z [--publish-pages] [--submit-linux-build] [--skip-*]
 nix run .#ci-fmt / ci-clippy / ci-test         # lint gates (repo extras allowed)
 ```
 
 Conventions: conventional commits; `CHANGELOG.md` with `## Unreleased`;
-`vX.Y.Z` tags; jj-first VCS; release manifest at `builds/release-linux-x86_64.yml`
+annotated `vX.Y.Z` tags with attached sr.ht artifacts; jj-first VCS; release manifest at `builds/release-linux-x86_64.yml`
 (runs only on explicit `hut builds submit` — never in `.builds/`);
 `.jj-lint.toml` includes at least fmt+clippy+test. Per-repo quirks are recorded
 in `fleet.toml` — read them before touching a repo.
@@ -91,8 +90,8 @@ If main moved since the workspace was created, `jj rebase -s <change-id> -d main
 
 - Add a project: `nix run .#add-project -- <path> --description "..." [--no-downloads] [--tier more]`
 - Republish: push to this repo (CI does it) or `nix run .#build-pages && nix run .#publish-pages`
-- NEVER publish a tarball built with `--skip-mirror` (guard exists: `dist/PREVIEW_ONLY`)
-- `projects.toml` must list every subdirectory ever published to the site
+- Fleet project pages are rendered here from git.sr.ht tags, tag artifacts, and docs fetched from pinned main SHAs.
+- Per-repo `build-pages`/`publish-pages` apps may still exist during migration, but this repo is the sole Pages publisher.
 
 ### Recipe: distill TIL notes
 

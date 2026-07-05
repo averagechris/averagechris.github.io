@@ -34,6 +34,8 @@ local = "/Users/chris/projects/linear-cli"
 pages_subdir = "linear-cli"
 version_file = "Cargo.toml"
 artifact_prefix = "linear-cli"
+srht_repo = "linear-cli"
+binaries = ["linear"]
 upstream = "https://github.com/Finesssee/linear-cli"
 quirks = [
   "release docs live in .opencode/skills/release-process/SKILL.md; run ci-skills-render after editing skills",
@@ -48,6 +50,8 @@ local = "/Users/chris/projects/slack-rs"
 pages_subdir = "slack"
 version_file = "Cargo.toml"
 artifact_prefix = "slack"
+srht_repo = "slack"
+binaries = ["slack"]
 upstream = "https://github.com/tumf/slack-rs"
 quirks = [
   "publishes under /slack with slack-v* artifacts; repo dir is slack-rs, sourcehut repo is 'slack'",
@@ -62,6 +66,8 @@ local = "/Users/chris/projects/granola-cli"
 pages_subdir = "granola-cli"
 version_file = "Cargo.toml"
 artifact_prefix = "granola-cli"
+srht_repo = "granola-cli"
+binaries = ["granola"]
 quirks = [
   "binary is 'granola', crate/artifacts are 'granola-cli'",
   "historically darwin-only artifacts; Linux artifact path is new and first compiles on first hut builds submit",
@@ -75,6 +81,8 @@ local = "/Users/chris/projects/ctx"
 pages_subdir = "ctx"
 version_file = "crates/ctx-cli/Cargo.toml"
 artifact_prefix = "ctx"
+srht_repo = "ctx"
+binaries = ["ctx"]
 upstream = "https://github.com/ctxrs/ctx"
 quirks = [
   "cargo workspace: version lives in crates/ctx-cli/Cargo.toml; Cargo.lock package name is 'ctx'",
@@ -88,6 +96,8 @@ local = "/Users/chris/projects/starship-jj"
 pages_subdir = "starship-jj"
 version_file = "Cargo.toml"
 artifact_prefix = "starship-jj"
+srht_repo = "starship-jj"
+binaries = ["starship-jj"]
 upstream = "https://gitlab.com/lanastara_foss/starship-jj.git"
 quirks = [
   "fork: trunk() may resolve to main@upstream (gitlab) — verify against local main bookmark",
@@ -103,6 +113,8 @@ local = "/Users/chris/projects/workctl"
 pages_subdir = "workctl"
 version_file = "Cargo.toml"
 artifact_prefix = "workctl"
+srht_repo = "workctl"
+binaries = ["workctl", "workd"]
 quirks = [
   "cargo workspace: version is [workspace.package] in ROOT Cargo.toml; prepare-release also bumps the workctl-core pin in [workspace.dependencies] and all three Cargo.lock stanzas (workctl, workctl-core, workd)",
   "release tarball ships TWO binaries: workctl and workd",
@@ -116,6 +128,8 @@ local = "/Users/chris/projects/gander"
 pages_subdir = "gander"
 version_file = "Cargo.toml"
 artifact_prefix = "gander"
+srht_repo = "gander"
+binaries = ["gander"]
 quirks = [
   "owner often has active work in the default workspace — ALWAYS use a jj workspace",
   "jj lint has 13 gates (audit, deny, machete, sort, taplo, alejandra, statix, deadnix, typos, ...)",

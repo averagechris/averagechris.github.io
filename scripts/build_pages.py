@@ -14,6 +14,7 @@ import argparse
 import datetime as dt
 import html
 import json
+import os
 import pathlib
 import re
 import shutil
@@ -32,7 +33,14 @@ ARTIFACT_RE = re.compile(
     r"(.+)-(?P<version>v\d+\.\d+\.\d+)-"
     r"(?P<arch>x86_64|aarch64)-(?P<os>linux|darwin)\.tar\.gz$"
 )
+SEMVER_TAG_RE = re.compile(r"^v\d+\.\d+\.\d+$")
+PLATFORMS = ("aarch64-darwin", "x86_64-darwin", "aarch64-linux", "x86_64-linux")
+DOC_PAGES = ("overview.html", "example.html", "tour.html", "sample-review.html")
 EXTRA_SUBTREE_FILES = ("manifest.json",)
+EXTRA_SOFT_SUBTREE_FILES = ("manifest.json", "overview.html", "example.html")
+PROJECT_INFO_PAGES = ("overview.html", "example.html")
+MIRROR_MAX_HTML_DEPTH = 3
+MIRROR_MAX_FILES = 200
 RELEASE_DATES_HEADER = """# Cache of release tag dates, updated automatically by build-pages when
 # local fleet repos are available. Safe to commit; CI reads it as-is.
 [dates]
@@ -214,6 +222,163 @@ def fetch(url: str, *, soft: bool = False) -> bytes | None:
         fail(f"fetching {url}: {error}")
 
 
+def run_text(command: list[str]) -> str:
+    result = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    if result.returncode != 0:
+        fail(f"command failed: {' '.join(command)}\n{result.stderr.strip()}")
+    return result.stdout
+
+
+def semver_key(tag: str) -> tuple[int, int, int]:
+    return tuple(int(part) for part in tag.removeprefix("v").split("."))  # type: ignore[return-value]
+
+
+def load_fleet(repo: pathlib.Path) -> dict[str, dict]:
+    data = tomllib.loads((repo / "fleet.toml").read_text())
+    return {r["pages_subdir"]: r for r in data.get("repos", []) if r.get("pages_subdir")}
+
+
+def ls_remote(srht_repo: str) -> tuple[dict[str, str], str]:
+    out = run_text(["git", "ls-remote", f"https://git.sr.ht/~averagechris/{srht_repo}"])
+    tags: dict[str, str] = {}
+    main_sha = ""
+    for line in out.splitlines():
+        sha, ref = line.split("\t", 1)
+        if ref == "refs/heads/main":
+            main_sha = sha
+        elif ref.startswith("refs/tags/v") and not ref.endswith("^{}"):
+            tag = ref.removeprefix("refs/tags/")
+            if SEMVER_TAG_RE.match(tag):
+                tags[tag] = sha
+    return tags, main_sha
+
+
+def srht_raw(repo_name: str, ref: str, path: str) -> str:
+    return f"https://git.sr.ht/~averagechris/{repo_name}/blob/{urllib.parse.quote(ref, safe='')}/{urllib.parse.quote(path, safe='/')}"
+
+
+def srht_download(repo_name: str, tag: str, name: str) -> str:
+    return f"https://git.sr.ht/~averagechris/{repo_name}/refs/download/{tag}/{urllib.parse.quote(name)}"
+
+
+def parse_changelog(text: str) -> dict[str, str]:
+    sections: dict[str, list[str]] = {}
+    current: str | None = None
+    for line in text.splitlines():
+        m = re.match(r"^## (v\d+\.\d+\.\d+)(?:\s+-\s+.*)?\s*$", line)
+        if m:
+            current = m.group(1)
+            sections[current] = []
+        elif current:
+            if line.startswith("## "):
+                current = None
+            else:
+                sections[current].append(line)
+    return {k: "\n".join(v).strip() for k, v in sections.items() if "\n".join(v).strip()}
+
+
+def platform_label(platform: str) -> str:
+    arch, os_name = platform.split("-", 1)
+    return f"{'macos' if os_name == 'darwin' else os_name} {'arm64' if arch == 'aarch64' and os_name == 'darwin' else arch}"
+
+
+def artifact_cache_path(repo: pathlib.Path, name: str) -> pathlib.Path:
+    safe = urllib.parse.quote(name, safe="")
+    return repo / ".cache" / "artifacts" / safe
+
+
+def download_artifact(repo: pathlib.Path, url: str, name: str, dest: pathlib.Path, *, soft: bool = False) -> bool:
+    cache = artifact_cache_path(repo, name)
+    cache.parent.mkdir(parents=True, exist_ok=True)
+    if not cache.exists():
+        data = fetch(url, soft=soft)
+        if data is None:
+            return False
+        cache.write_bytes(data)
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(cache, dest)
+    return True
+
+
+def render_download_page(site: dict, project: dict, base_url: str, info: dict) -> str:
+    def build_card(a: dict) -> str:
+        rel = f"downloads/{a['name']}" if a.get("hosted") else a["url"]
+        chk = f"downloads/{a['name']}.sha256" if a.get("hosted") else a["sha_url"]
+        return f"""
+          <article class="build"><h4>{esc(a['label'])}</h4><p class="filename"><code>{esc(a['name'])}</code></p>
+          <p class="download-links"><a class="primary-link" href="{esc(rel)}">Download tarball</a><a href="{esc(chk)}">Checksum</a></p>
+          <details><summary>SHA-256</summary><pre><code>{esc(a['sha256'])}  {esc(a['name'])}</code></pre></details></article>"""
+    releases = []
+    for tag in info["versions"]:
+        arts = [a for a in info["artifacts"] if a["version"] == tag]
+        if not arts:
+            continue
+        body = "".join(build_card(a) for a in arts)
+        klass = "release latest" if tag == info["tag"] else "release"
+        label = "Latest release" if tag == info["tag"] else "Release"
+        releases.append(f"""<section class="{klass}"><div class="release-heading"><div><p class="eyebrow">{label}</p><h3>{esc(tag)}</h3></div><span class="build-count">{len(arts)} builds</span></div><div class="build-grid">{body}</div></section>""")
+    page_links = "".join(f'<a class="page-link" href="{esc(p)}">{esc(p.removesuffix(".html"))}</a>' for p in info["docs"] if p in ("overview.html", "example.html", "tour.html", "sample-review.html"))
+    whats = md_to_html(info["changelog"].get(info["tag"], "No changelog entry found."))
+    prev = "".join(f'<details><summary>{esc(t)}</summary>{md_to_html(info["changelog"].get(t, ""))}</details>' for t in info["versions"][1:3] if info["changelog"].get(t))
+    latest_art = next((a for a in info["artifacts"] if a["version"] == info["tag"]), None)
+    install = ""
+    if latest_art:
+        commands = []
+        stem = latest_art["name"].removesuffix(".tar.gz")
+        for binary in project.get("binaries", [project["name"]]):
+            commands.append(f"install -m 0755 {stem}/{binary} ~/.local/bin/{binary}")
+        install = f"curl -LO {base_url}/{project['pages_subdir']}/downloads/{latest_art['name']}\nsha256sum -c {latest_art['name']}.sha256\ntar -xzf {latest_art['name']}\n" + "\n".join(commands)
+    body = f"""<main class="content"><div class="masthead"><div><h1>{esc(project['name'])} downloads</h1><p class="home-link"><a href="/">~averagechris</a> / {esc(project['pages_subdir'])}</p></div><button class="theme-toggle" id="theme-toggle" aria-label="toggle color theme">dawn &frasl; moon</button></div>
+    <p>{esc(project.get('description',''))}</p><p class="page-links">{page_links}</p><p><a href="https://git.sr.ht/~averagechris/{esc(project['srht_repo'])}">Source repository</a></p>
+    <h2>What's new in {esc(info['tag'])}</h2>{whats}{prev}<h2>Binary downloads</h2>{''.join(releases)}<h2>Manual install</h2><pre><code>{esc(install)}</code></pre></main>"""
+    return page_chrome(f"{project['name']} downloads", project.get("description", ""), f"{base_url}/{project['pages_subdir']}/", site, body)
+
+
+def build_fleet_projects(repo: pathlib.Path, config: dict, site_dir: pathlib.Path, base_url: str) -> tuple[dict[str, bool], dict[str, dict], dict[str, set[str]], dict]:
+    fleet = load_fleet(repo)
+    published: dict[str, bool] = {}
+    meta: dict[str, dict] = {}
+    pages: dict[str, set[str]] = {}
+    state = {"generated_at": dt.datetime.now(dt.UTC).isoformat(), "trigger": {"source": os.environ.get("TRIGGER_SOURCE", "manual"), "project": os.environ.get("TRIGGER_PROJECT", ""), "tag": os.environ.get("TRIGGER_TAG", ""), "sha": os.environ.get("TRIGGER_SHA", "")}, "projects": {}}
+    for p in config["projects"]:
+        if not p.get("downloads", True) or p["path"] not in fleet:
+            continue
+        f = {**fleet[p["path"]], "description": p.get("description", "")}
+        tags, main_sha = ls_remote(f["srht_repo"])
+        versions = sorted(tags, key=semver_key, reverse=True)
+        if not versions:
+            published[p["path"]] = False; continue
+        tag = versions[0]
+        project_dir = site_dir / p["path"]; project_dir.mkdir(parents=True, exist_ok=True)
+        docs = set()
+        for doc in DOC_PAGES:
+            data = fetch(srht_raw(f["srht_repo"], main_sha, f"docs/pages/{doc}"), soft=True)
+            if data is not None:
+                (project_dir / doc).write_bytes(data); docs.add(doc)
+        changelog_text = (fetch(srht_raw(f["srht_repo"], tag, "CHANGELOG.md"), soft=True) or b"").decode("utf-8", "replace")
+        artifacts = []
+        for v in versions:
+            for platform in PLATFORMS:
+                name = f"{f['artifact_prefix']}-{v}-{platform}.tar.gz"
+                url = srht_download(f["srht_repo"], v, name); sha_url = url + ".sha256"
+                sha_data = fetch(sha_url, soft=True)
+                if sha_data is None: continue
+                sha = sha_data.decode().split()[0]
+                hosted = versions.index(v) < 3
+                if hosted:
+                    download_artifact(repo, url, name, project_dir / "downloads" / name, soft=True)
+                    (project_dir / "downloads" / f"{name}.sha256").write_bytes(sha_data)
+                artifacts.append({"name": name, "version": v, "platform": platform, "label": platform_label(platform), "url": (f"{base_url}/{p['path']}/downloads/{name}" if hosted else url), "sha_url": (f"{base_url}/{p['path']}/downloads/{name}.sha256" if hosted else sha_url), "sha256": sha, "hosted": hosted})
+        info = {"tag": tag, "tag_sha": tags[tag], "main_sha": main_sha, "versions": versions, "docs": sorted(docs), "changelog": parse_changelog(changelog_text), "artifacts": artifacts}
+        manifest = {"version": tag, "artifacts": [{"name": a["name"], "url": a["url"], "sha256": a["sha256"]} for a in artifacts]}
+        (project_dir / "manifest.json").write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n")
+        (project_dir / "index.html").write_text(render_download_page(config["site"], f, base_url, info))
+        published[p["path"]] = True; pages[p["path"]] = docs
+        meta[p["path"]] = parse_manifest(manifest) or {"version": tag, "artifacts": [], "platforms": []}
+        state["projects"][p["path"]] = {"tag": tag, "tag_sha": tags[tag], "main_sha": main_sha, "docs": sorted(docs), "hosted_versions": versions[:3], "artifacts": artifacts}
+    return published, meta, pages, state
+
+
 def subtree_files_from_page(page_html: str) -> set[str]:
     files = set()
     for href in HREF_RE.findall(page_html):
@@ -239,21 +404,69 @@ def mirror_project(base_url: str, path: str, site_dir: pathlib.Path) -> bool:
     (project_dir / "index.html").write_bytes(index_bytes)
 
     files = subtree_files_from_page(index_bytes.decode("utf-8", errors="replace"))
-    files.update(EXTRA_SUBTREE_FILES)
+    files.update(EXTRA_SOFT_SUBTREE_FILES)
     files.discard("index.html")
+    seen = {"index.html"}
+    html_queue = [
+        (relative, 1)
+        for relative in sorted(files)
+        if pathlib.PurePosixPath(relative).suffix.lower() == ".html"
+    ]
     fetched = 0
-    for relative in sorted(files):
-        content = fetch(f"{project_url}/{urllib.parse.quote(relative)}")
+    while files:
+        if len(seen) > MIRROR_MAX_FILES:
+            fail(f"{path}: mirror exceeded {MIRROR_MAX_FILES} files; refusing incomplete mirror")
+        relative = sorted(files)[0]
+        files.remove(relative)
+        if relative in seen:
+            continue
+        seen.add(relative)
+        content = fetch(f"{project_url}/{urllib.parse.quote(relative, safe='/')}")
         if content is None:
-            if relative in EXTRA_SUBTREE_FILES:
+            if relative in EXTRA_SOFT_SUBTREE_FILES:
                 continue
             fail(f"{path}: linked file {relative} returned 404; refusing incomplete mirror")
         destination = project_dir / relative
         destination.parent.mkdir(parents=True, exist_ok=True)
         destination.write_bytes(content)
         fetched += 1
+        if pathlib.PurePosixPath(relative).suffix.lower() == ".html":
+            html_depth = next((depth for queued, depth in html_queue if queued == relative), 1)
+            if html_depth < MIRROR_MAX_HTML_DEPTH:
+                linked = subtree_files_from_page(content.decode("utf-8", errors="replace"))
+                for discovered in linked:
+                    if discovered not in seen:
+                        files.add(discovered)
+                        if pathlib.PurePosixPath(discovered).suffix.lower() == ".html":
+                            html_queue.append((discovered, html_depth + 1))
     print(f"  {path}: mirrored index.html + {fetched} files")
     return True
+
+
+def collect_project_pages(config: dict, base_url: str, site_dir: pathlib.Path, skip_mirror: bool) -> dict[str, set[str]]:
+    pages = {}
+    for project in config["projects"]:
+        if not project.get("downloads", True):
+            continue
+        found = set()
+        for page in PROJECT_INFO_PAGES:
+            if skip_mirror:
+                if fetch(f"{base_url}/{project['path']}/{page}", soft=True) is not None:
+                    found.add(page)
+            elif (site_dir / project["path"] / page).is_file():
+                found.add(page)
+        if found:
+            pages[project["path"]] = found
+    return pages
+
+
+def project_info_links(base_url: str, project: dict, pages: dict[str, set[str]]) -> list[str]:
+    path = project["path"]
+    return [
+        f'<a href="{esc(base_url + "/" + path + "/" + page)}">{esc(page.removesuffix(".html"))}</a>'
+        for page in PROJECT_INFO_PAGES
+        if page in pages.get(path, set())
+    ]
 
 
 def read_json(path: pathlib.Path) -> dict | None:
@@ -544,6 +757,7 @@ def render_index(
     base_url: str,
     published: dict[str, bool],
     meta: dict[str, dict],
+    project_pages: dict[str, set[str]],
     dates: dict[str, str],
     notes: list[dict[str, object]],
 ) -> str:
@@ -559,8 +773,17 @@ def render_index(
         has_downloads = project.get("downloads", True)
 
         if project.get("tier", "featured") == "more":
+            more_links = []
+            if has_downloads:
+                more_links.append(f'<a href="{esc(base_url + "/" + project["path"] + "/")}">downloads</a>')
+                more_links.extend(project_info_links(base_url, project, project_pages))
+            more_links.extend(
+                f'<a href="{esc(link["url"])}">{esc(link["label"])}</a>'
+                for link in project.get("extra_links", [])
+            )
+            suffix = f' ({" · ".join(more_links)})' if more_links else ""
             more_items.append(
-                f'    <li><a href="{repo_url}">{name}</a> &mdash; {description}</li>'
+                f'    <li><a href="{repo_url}">{name}</a> &mdash; {description}{suffix}</li>'
             )
             continue
 
@@ -571,9 +794,10 @@ def render_index(
             else:
                 downloads_url = esc(base_url + "/" + project["path"] + "/")
                 links.append(f'<a class="primary-link" href="{downloads_url}">downloads</a>')
-        links.append(f'<a href="{repo_url}">source</a>')
+                links.extend(project_info_links(base_url, project, project_pages))
         for link in project.get("extra_links", []):
             links.append(f'<a href="{esc(link["url"])}">{esc(link["label"])}</a>')
+        links.append(f'<a href="{repo_url}">source</a>')
 
         badge, date_text, platforms = version_bits(project["path"], meta, dates)
         metadata = card_meta_line(platforms, date_text)
@@ -731,7 +955,15 @@ def render_notes(repo: pathlib.Path, site_dir: pathlib.Path, site: dict, base_ur
     )
     return notes
 
-def render_tools(config: dict, site: dict, base_url: str, meta: dict[str, dict], dates: dict[str, str], has_keys: bool) -> str:
+def render_tools(
+    config: dict,
+    site: dict,
+    base_url: str,
+    meta: dict[str, dict],
+    project_pages: dict[str, set[str]],
+    dates: dict[str, str],
+    has_keys: bool,
+) -> str:
     verify = "/keys/" if has_keys else "https://meta.sr.ht/~averagechris.pgp"
     entries = []
     for project in config["projects"]:
@@ -740,10 +972,13 @@ def render_tools(config: dict, site: dict, base_url: str, meta: dict[str, dict],
         badge, date_text, _ = version_bits(project["path"], meta, dates)
         date_html = f' <span class="muted mono">{esc(date_text)}</span>' if date_text else ""
         project_meta = meta[project["path"]]
+        links = [f'<a class="primary-link" href="/{esc(project["path"])}/">downloads page</a>']
+        links.extend(project_info_links("", project, project_pages))
+        links.append(f'<a href="{esc(project["repo"])}">source</a>')
         entries.append(f"""    <article class="tool" id="{esc(project["path"])}">
       <h2><a href="#{esc(project["path"])}">{esc(project["name"])}</a> {badge}{date_html}</h2>
       <p>{esc(project["description"])}</p>
-      <p class="project-links"><a class="primary-link" href="/{esc(project["path"])}/">downloads page</a> <a href="{esc(project["repo"])}">source</a></p>
+      <p class="project-links">{" ".join(links)}</p>
       <h3>install</h3>
 {install_details(project_meta["artifacts"])}
       <h3>verified install</h3>
@@ -759,7 +994,6 @@ def render_tools(config: dict, site: dict, base_url: str, meta: dict[str, dict],
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--domain", default=None)
-    parser.add_argument("--skip-mirror", action="store_true")
     parser.add_argument("--out", default="dist")
     args = parser.parse_args()
 
@@ -775,29 +1009,22 @@ def main() -> None:
         shutil.rmtree(site_dir)
     site_dir.mkdir(parents=True)
 
-    published = {}
-    if args.skip_mirror:
-        print("skipping mirror of live site (preview only)")
-    else:
-        print(f"mirroring live site from {base_url}")
-        for project in config["projects"]:
-            if project.get("downloads", True):
-                published[project["path"]] = mirror_project(base_url, project["path"], site_dir)
-
-    meta = collect_metadata(config, base_url, site_dir, args.skip_mirror)
+    print("building fleet project pages from sr.ht tags and repo files")
+    published, meta, project_pages, state = build_fleet_projects(repo, config, site_dir, base_url)
     dates = update_release_dates(repo, meta)
 
     slugs = render_content_pages(repo, site_dir, site, base_url)
     notes = render_notes(repo, site_dir, site, base_url)
     (site_dir / "index.html").write_text(
-        render_index(repo, config, base_url, published, meta, dates, notes)
+        render_index(repo, config, base_url, published, meta, project_pages, dates, notes)
     )
 
     tools_dir = site_dir / "tools"
     tools_dir.mkdir(parents=True, exist_ok=True)
     (tools_dir / "index.html").write_text(
-        render_tools(config, site, base_url, meta, dates, "keys" in slugs)
+        render_tools(config, site, base_url, meta, project_pages, dates, "keys" in slugs)
     )
+    (site_dir / "state.json").write_text(json.dumps(state, indent=2, sort_keys=True) + "\n")
 
     not_found_body = """  <main class="content">
     <h1>404</h1>
@@ -829,16 +1056,10 @@ def main() -> None:
             if path.is_file():
                 archive.add(path, arcname=str(path.relative_to(site_dir)))
 
-    marker = out_dir / "PREVIEW_ONLY"
-    if args.skip_mirror:
-        marker.write_text("built with --skip-mirror; publishing would wipe project pages\n")
-    else:
-        marker.unlink(missing_ok=True)
+    (out_dir / "PREVIEW_ONLY").unlink(missing_ok=True)
 
     print(f"site: {site_dir}")
     print(f"tarball: {tarball}")
-    if args.skip_mirror:
-        print("NOTE: built without mirroring; do NOT publish this tarball")
 
 
 if __name__ == "__main__":
