@@ -44,6 +44,7 @@ DOC_PAGES = (
     "sample-review.html",
 )
 PROJECT_INFO_PAGES = DOC_PAGES
+MAX_DOC_BYTES = 1_000_000
 RELEASE_DATES_HEADER = """# Cache of release tag dates, updated automatically by build-pages when
 # local fleet repos are available. Safe to commit; CI reads it as-is.
 [dates]
@@ -383,6 +384,8 @@ def build_fleet_projects(repo: pathlib.Path, config: dict, site_dir: pathlib.Pat
         for doc in DOC_PAGES:
             data = fetch(srht_raw(f["srht_repo"], main_sha, f"docs/pages/{doc}"), soft=True)
             if data is not None:
+                if len(data) > MAX_DOC_BYTES:
+                    fail(f"{f['srht_repo']} docs/pages/{doc} is larger than {MAX_DOC_BYTES} bytes")
                 (project_dir / doc).write_bytes(data); docs.add(doc)
         changelog_text = (fetch(srht_raw(f["srht_repo"], tag, "CHANGELOG.md"), soft=True) or b"").decode("utf-8", "replace")
         artifacts = []

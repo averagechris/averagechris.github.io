@@ -14,13 +14,15 @@ backstop. `refresh-pages` compares the latest tags and main SHAs to the live
 rebuilds deterministically from sourcehut, fingerprints again before publishing,
 and retries a bounded number of times so concurrent releases converge.
 
-Optional project docs under `docs/pages/*.html` are copied from pinned fleet repo
-main SHAs and published as same-origin HTML beneath each project subdirectory.
-That is an intentional trusted-fleet boundary: release-tier repos are allowed to
-ship project docs with their own markup/scripts, but compromising any fleet repo
-can therefore publish same-origin content under its project path. Prefer simple,
-self-contained docs pages and treat expanding this to less-trusted repos as an
-architecture change.
+Optional project docs under selected allowlisted `docs/pages/*.html` filenames
+(`overview.html`, `examples.html`, `example.html`, `demo.html`,
+`changelog.html`, `tour.html`, and `sample-review.html`) are copied from pinned
+fleet repo main SHAs and published as same-origin HTML beneath each project
+subdirectory. Each copied docs page is capped at 1 MB. This is an intentional
+trusted-fleet boundary: release-tier repos are allowed to ship project docs with
+their own markup/scripts, but compromising any fleet repo can therefore publish
+same-origin content under its project path. Prefer simple, self-contained docs
+pages and treat expanding this to less-trusted repos as an architecture change.
 
 Artifact downloads are cached locally under `.cache/artifacts/`. CI jobs pull
 from the `averagechris-dotfiles` cachix cache as an extra substituter; thorny's

@@ -6,6 +6,9 @@ secrets:
   # Mounts ~/.ci_secrets/cachix_token for averagechris-dotfiles Cachix pushes.
   - 731f7e55-4497-4228-8fa4-1657da7d3625
 environment:
+  GIT_CONFIG_COUNT: "1"
+  GIT_CONFIG_KEY_0: http.userAgent
+  GIT_CONFIG_VALUE_0: "averagechris-fleet-pages (+https://averagechris.srht.site)"
   NIX_CONFIG: |
     experimental-features = nix-command flakes
     extra-substituters = https://averagechris-dotfiles.cachix.org

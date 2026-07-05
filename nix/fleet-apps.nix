@@ -101,6 +101,9 @@
       arch: x86_64
       oauth: pages.sr.ht/PAGES:RW
       environment:
+        GIT_CONFIG_COUNT: "1"
+        GIT_CONFIG_KEY_0: http.userAgent
+        GIT_CONFIG_VALUE_0: "averagechris-fleet-pages (+https://averagechris.srht.site)"
         NIX_CONFIG: |
           experimental-features = nix-command flakes
           extra-substituters = https://averagechris-dotfiles.cachix.org

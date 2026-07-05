@@ -38,6 +38,17 @@ RESERVED_OUTPUT_NAMES = {
     "release-artifact",
     "release-tag",
 }
+RESERVED_SITE_PATHS = {
+    "404",
+    "assets",
+    "fleet",
+    "keys",
+    "notes",
+    "now",
+    "state",
+    "tools",
+    "uses",
+}
 NIX_KEYWORDS = {
     "assert",
     "else",
@@ -49,6 +60,59 @@ NIX_KEYWORDS = {
     "rec",
     "then",
     "with",
+}
+RUST_KEYWORDS = {
+    "Self",
+    "abstract",
+    "as",
+    "async",
+    "await",
+    "become",
+    "box",
+    "break",
+    "const",
+    "continue",
+    "crate",
+    "do",
+    "dyn",
+    "else",
+    "enum",
+    "extern",
+    "false",
+    "final",
+    "fn",
+    "for",
+    "if",
+    "impl",
+    "in",
+    "let",
+    "loop",
+    "macro",
+    "match",
+    "mod",
+    "move",
+    "mut",
+    "override",
+    "priv",
+    "pub",
+    "ref",
+    "return",
+    "self",
+    "static",
+    "struct",
+    "super",
+    "trait",
+    "true",
+    "try",
+    "type",
+    "typeof",
+    "unsafe",
+    "unsized",
+    "use",
+    "virtual",
+    "where",
+    "while",
+    "yield",
 }
 
 
@@ -118,6 +182,19 @@ def validate_output_name(name: str, *, kind: str) -> str:
     if name in RESERVED_OUTPUT_NAMES or name in NIX_KEYWORDS:
         raise SystemExit(f"error: {kind} name {name!r} is reserved by the generated Nix flake")
     return name
+
+
+def validate_rust_crate_name(name: str, *, kind: str) -> str:
+    crate_ident = name.replace("-", "_")
+    if crate_ident == "_" or crate_ident in RUST_KEYWORDS:
+        raise SystemExit(f"error: {kind} name {name!r} is not usable as a Rust crate/target identifier")
+    return name
+
+
+def validate_site_path(path: str) -> str:
+    if path in RESERVED_SITE_PATHS:
+        raise SystemExit(f"error: pages subdirectory {path!r} is reserved by the root site")
+    return path
 
 
 def validate_semver(version: str) -> str:
@@ -782,11 +859,17 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
 
     args.dir = args.dir.expanduser()
     selected_name = args.name_override or args.name or args.dir.resolve().name
-    args.name = validate_output_name(validate_project_name(selected_name), kind="project")
-    args.binary = validate_output_name(validate_binary_name(args.binary or args.name), kind="binary")
+    args.name = validate_rust_crate_name(
+        validate_output_name(validate_project_name(selected_name), kind="project"),
+        kind="project",
+    )
+    args.binary = validate_rust_crate_name(
+        validate_output_name(validate_binary_name(args.binary or args.name), kind="binary"),
+        kind="binary",
+    )
     args.srht_repo = validate_project_name(args.srht_repo or args.name)
     args.artifact_prefix = validate_project_name(args.artifact_prefix or args.name)
-    args.pages_subdir = validate_project_name(args.pages_subdir or args.name)
+    args.pages_subdir = validate_site_path(validate_project_name(args.pages_subdir or args.name))
     args.version = validate_semver(args.version)
     args.description = args.description or f"A Rust CLI for {args.name}."
     if args.featured:

@@ -17,6 +17,20 @@ import sys
 import tomllib
 
 
+RESERVED_SITE_PATHS = {
+    "404",
+    "assets",
+    "fleet",
+    "keys",
+    "notes",
+    "now",
+    "state",
+    "state.json",
+    "tools",
+    "uses",
+}
+
+
 def toml_string(value: str) -> str:
     escaped = value.replace("\\", "\\\\").replace('"', '\\"')
     return f'"{escaped}"'
@@ -36,6 +50,8 @@ def main() -> None:
     path = args.path.strip("/")
     if not path or "/" in path:
         raise SystemExit("error: path must be a single top-level subdirectory name")
+    if path in RESERVED_SITE_PATHS:
+        raise SystemExit(f"error: path {path!r} is reserved by the root site")
 
     repo_root = pathlib.Path(__file__).resolve().parent.parent
     config_path = repo_root / "projects.toml"

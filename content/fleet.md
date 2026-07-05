@@ -24,7 +24,7 @@ Release artifacts are built through Nix and published with checksums. The normal
 
 The website has one important SourceHut Pages wrinkle: this repo is now the only publisher for `averagechris.srht.site`. A root publish replaces the whole site. Not updates. Replaces. Computers remain a trust exercise with invoices.
 
-So fleet repos publish durable inputs instead of Pages: annotated semver tags, tag artifacts, `CHANGELOG.md`, and optional `docs/pages/*.html` from pinned main SHAs. The homepage builder resolves those inputs, hosts recent artifacts under each project subdirectory, renders downloads/changelog pages, copies optional project docs, writes `manifest.json`, and publishes one complete root tarball.
+So fleet repos publish durable inputs instead of Pages: annotated semver tags, tag artifacts, `CHANGELOG.md`, and selected allowlisted optional `docs/pages/*.html` files from pinned main SHAs. The homepage builder resolves those inputs, hosts recent artifacts under each project subdirectory, renders downloads/changelog pages, copies optional project docs, writes `manifest.json`, and publishes one complete root tarball.
 
 ```sh
 # add a new project card / downloads subdirectory
