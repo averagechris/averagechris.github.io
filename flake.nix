@@ -6,17 +6,16 @@
     flake-utils.url = "github:numtide/flake-utils";
   };
 
-  outputs =
-    {
-      self,
-      nixpkgs,
-      flake-utils,
-    }:
-    flake-utils.lib.eachDefaultSystem (
-      system:
-      let
+  outputs = {
+    self,
+    nixpkgs,
+    flake-utils,
+  }:
+    {lib = import ./nix/fleet-apps.nix {lib = nixpkgs.lib;};}
+    // flake-utils.lib.eachDefaultSystem (
+      system: let
         pkgs = nixpkgs.legacyPackages.${system};
-        python = pkgs.python3.withPackages (ps: [ ps.markdown ]);
+        python = pkgs.python3.withPackages (ps: [ps.markdown]);
 
         mkApp = name: script: {
           type = "app";
@@ -46,8 +45,7 @@
           repo_root="$(git rev-parse --show-toplevel 2>/dev/null || jj root)"
           cd "$repo_root"
         '';
-      in
-      {
+      in {
         apps = {
           build-pages = mkApp "build-pages" ''
             ${repoScripts}
@@ -76,7 +74,7 @@
             exec hut pages publish "$tarball" --domain "$domain" "''${site_config_args[@]}"
           '';
 
-          refresh-pages = mkAppWithInputs "refresh-pages" [ python pkgs.hut pkgs.git pkgs.curl ] ''
+          refresh-pages = mkAppWithInputs "refresh-pages" [python pkgs.hut pkgs.git pkgs.curl] ''
             ${repoScripts}
             exec python3 scripts/refresh_pages.py "$@"
           '';

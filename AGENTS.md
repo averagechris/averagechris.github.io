@@ -12,20 +12,23 @@ This repo is two things:
 
 ```sh
 nix run .#prepare-release -- --version X.Y.Z   # bump version, date CHANGELOG, fix builds manifest
-nix run .#release-tag                          # jj tag vX.Y.Z + push + move main
+nix run .#release-tag                          # annotated vX.Y.Z tag + push
 nix build .#release-artifact                   # reproducible tarball + .sha256
-nix run .#build-pages / .#publish-pages         # migrating out of projects; this repo now publishes pages
-nix run .#release -- --version X.Y.Z [--publish-pages] [--submit-linux-build] [--skip-*]
+nix run .#release -- --version X.Y.Z [--submit-linux-build] [--skip-*]
 nix run .#ci-fmt / ci-clippy / ci-test         # lint gates (repo extras allowed)
 ```
 
 Conventions: conventional commits; `CHANGELOG.md` with `## Unreleased`;
-annotated `vX.Y.Z` tags with attached sr.ht artifacts; jj-first VCS; release manifest at `builds/release-linux-x86_64.yml`
+annotated `vX.Y.Z` tags (required for sr.ht ref artifacts) with attached sr.ht
+artifacts; releases trigger this repo's `refresh-pages` build instead of per-repo
+Pages publishing; jj-first VCS; release manifest at `builds/release-linux-x86_64.yml`
 (runs only on explicit `hut builds submit` — never in `.builds/`);
 `.jj-lint.toml` includes at least fmt+clippy+test. Per-repo quirks are recorded
 in `fleet.toml` — read them before touching a repo.
 
 Check conformance: `nix run .#fleet-status` (add `--nix` to verify flake apps).
+Shared release helpers live under `lib.fleet.core`; Rust repos use
+`lib.fleet.presets.rust` via the backward-compatible `lib.mkFleetApps` alias.
 
 ## Dispatching maintenance subagents
 
@@ -63,7 +66,7 @@ safety rules:
 Per repo subagent: workspace as above → `cargo update` (or targeted bumps) →
 run ci gates + `jj lint` → describe as `chore(deps): ...` → report. Then the
 human (with my help) reviews each workspace diff, merges (below), and runs
-`nix run .#release -- --version X.Y.<n+1> --publish-pages --submit-linux-build`
+`nix run .#release -- --version X.Y.<n+1> --submit-linux-build`
 from each repo's default workspace.
 
 ### Recipe: upstream fork review

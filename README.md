@@ -1,5 +1,15 @@
 # averagechris.srht.site
 
+## Shared release tooling
+
+Fleet projects consume `lib.mkFleetApps` (an alias for the Rust preset at
+`lib.fleet.presets.rust`) from this flake to expose the standard
+`prepare-release`, `release-tag`, `release`, `ci-fmt`, `ci-clippy`, `ci-test`,
+and `release-artifact` interface without copying release scripts. The shared
+release flow is built from composable `lib.fleet.core` helpers, creates
+annotated tags, uploads release tarballs as sr.ht tag artifacts, and submits a
+SourceHut build that runs this site's `refresh-pages` publisher.
+
 The root homepage for <https://averagechris.srht.site/>: an about-me plus a
 directory of my projects, each linking to its downloads page at
 `https://averagechris.srht.site/<project>/`.

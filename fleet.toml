@@ -6,14 +6,13 @@
 #   nix run .#prepare-release -- --version X.Y.Z
 #   nix run .#release-tag
 #   nix build .#release-artifact
-#   nix run .#build-pages [-- --include-existing-downloads]
-#   nix run .#publish-pages
-#   nix run .#release -- --version X.Y.Z [--publish-pages] [--submit-linux-build]
+#   nix run .#release -- --version X.Y.Z [--submit-linux-build] [--skip-*]
 #   nix run .#ci-fmt | ci-clippy | ci-test
 #
-# plus: release manifest at builds/release-linux-x86_64.yml (explicit
-# `hut builds submit` only — NOT .builds/), CHANGELOG.md with an
-# `## Unreleased` section, conventional commits, vX.Y.Z tags, jj-first VCS.
+# plus: annotated vX.Y.Z tags with attached sr.ht artifacts, release manifest at
+# builds/release-linux-x86_64.yml (explicit `hut builds submit` only — NOT
+# .builds/), CHANGELOG.md with an `## Unreleased` section, conventional commits,
+# and jj-first VCS. averagechris.srht.site is the single Pages publisher.
 
 [fleet]
 maint_workspace_root = "/Users/chris/projects/.maint"
@@ -21,8 +20,6 @@ required_apps = [
   "prepare-release",
   "release-tag",
   "release",
-  "build-pages",
-  "publish-pages",
   "ci-fmt",
   "ci-clippy",
   "ci-test",
@@ -119,6 +116,7 @@ quirks = [
   "cargo workspace: version is [workspace.package] in ROOT Cargo.toml; prepare-release also bumps the workctl-core pin in [workspace.dependencies] and all three Cargo.lock stanzas (workctl, workctl-core, workd)",
   "release tarball ships TWO binaries: workctl and workd",
   "nix flake check has a pre-existing sandbox failure (cargo hits crates.io CA verify) — the ci-* apps are the real gates",
+  "local_loop tests hang in jj-only (non-colocated) workspaces — run ci-test from a git-colocated checkout",
   ".jj-lint.toml direct-tool lints (alejandra, statix, cargo-*) need the dev shell; run via nix develop --command outside it",
 ]
 
