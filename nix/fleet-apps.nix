@@ -182,7 +182,7 @@
           stage="$TMPDIR/stage/${lib.removeSuffix ".tar.gz" artifactName}"; mkdir -p "$out" "$stage"
           ${contents system}
           tar --sort=name --format=ustar --mtime='@1' --owner=0 --group=0 --numeric-owner -C "$TMPDIR/stage" -cf - "${lib.removeSuffix ".tar.gz" artifactName}" | gzip -n > "$out/${artifactName}"
-          sha256sum "$out/${artifactName}" | sed 's#.*/##' > "$out/${artifactName}.sha256"
+          (cd "$out" && sha256sum "${artifactName}" > "${artifactName}.sha256")
         '';
   };
 
