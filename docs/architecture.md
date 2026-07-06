@@ -92,15 +92,18 @@ production cutover. Missing HTML pages, downloads, SHA files, HTML structural
 drift, or non-HTML byte mismatches are blockers unless the URL/content change is
 intentional and documented.
 
-The experimental Zola adapter is selected with
-`nix run .#build-pages -- --renderer zola`. The build still runs the normal
-acquisition phase first, so docs, downloads, manifests, `state.json`, and
-`siteconfig.json` remain owned by acquisition/assembly. The renderer then
-materializes a temporary Zola tree from canonical `site-data/` plus
-`generated/fleet.json`, copies `renderers/zola/templates`, runs `zola build`,
-and merges only the generated HTML into `dist/site` without clobbering acquired
-non-HTML files. Zola front matter is derived throwaway input; the durable source
-of truth stays in `site-data/` and `generated/fleet.json`.
+Zola is the production renderer (the default for `nix run .#build-pages`; cut
+over 2026-07-05 after the comparison harness reported full structural parity).
+The Python string-template renderer remains available as a rollback via
+`nix run .#build-pages -- --renderer python` until it is retired. The build
+still runs the normal acquisition phase first, so docs, downloads, manifests,
+`state.json`, and `siteconfig.json` remain owned by acquisition/assembly. The
+Zola renderer then materializes a temporary Zola tree from canonical
+`site-data/` plus `generated/fleet.json`, copies `renderers/zola/templates`,
+runs `zola build`, and merges only the generated HTML into `dist/site` without
+clobbering acquired non-HTML files. Zola front matter is derived throwaway
+input; the durable source of truth stays in `site-data/` and
+`generated/fleet.json`.
 
 ## Shared fleet tooling
 

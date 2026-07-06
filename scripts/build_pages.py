@@ -1040,7 +1040,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--domain", default=None)
     parser.add_argument("--out", default="dist")
-    parser.add_argument("--renderer", choices=("python", "zola"), default="python")
+    parser.add_argument("--renderer", choices=("python", "zola"), default="zola")
     args = parser.parse_args()
     repo = pathlib.Path(__file__).resolve().parent.parent
     loaded = load_site_data(repo)
