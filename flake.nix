@@ -199,7 +199,7 @@
               printf 'missing dist/site; run: nix run .#build-pages\n' >&2
               exit 1
             fi
-            exec python3 -m http.server --directory dist/site "''${1:-8000}"
+            exec python3 scripts/serve_pages_alike.py dist/site "''${1:-8000}"
           '';
         };
 
