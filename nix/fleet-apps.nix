@@ -34,15 +34,17 @@
         runtimeInputs = (with pkgs; [python3]) ++ runtimeInputs;
         text = ''
           set -euo pipefail
-          usage() { printf 'usage: prepare-release [--version X.Y.Z]\n' >&2; }
-          version=""
+          usage() { printf 'usage: prepare-release [--version X.Y.Z] [--allow-downgrade]\n' >&2; }
+          version=""; allow_downgrade=0
           while [ "$#" -gt 0 ]; do
             case "$1" in
               --version) version="''${2:-}"; shift 2 ;;
+              --allow-downgrade) allow_downgrade=1; shift ;;
               -h|--help) usage; exit 0 ;;
               *) usage; exit 2 ;;
             esac
           done
+          export ALLOW_DOWNGRADE="$allow_downgrade"
           ${setVersion}
           VERSION="$version" PNAME=${q pname} CHANGELOG=${q changelog} MANIFEST_PATH=${q manifestPath} python3 - <<'PY'
           from pathlib import Path
@@ -149,12 +151,21 @@
         runtimeInputs = (with pkgs; [coreutils git hut jujutsu nix python3]) ++ runtimeInputs;
         text = ''
           set -euo pipefail; repo_root="$(git rev-parse --show-toplevel 2>/dev/null || jj root)"; cd "$repo_root"
-          version=""; revision="@"; validate=1; tag_release=1; build_artifact=1; upload_artifact=1; submit_refresh=1; submit_linux_build=0; linux_manifest=${q linuxManifest}
-          while [[ $# -gt 0 ]]; do case "$1" in --version) version="$2"; shift 2;; --revision) revision="$2"; shift 2;; --skip-validate) validate=0; shift;; --skip-tag) tag_release=0; shift;; --skip-artifact) build_artifact=0; shift;; --skip-upload) upload_artifact=0; shift;; --skip-refresh) submit_refresh=0; shift;; --submit-linux-build) submit_linux_build=1; shift;; -h|--help) printf 'usage: release [--version X.Y.Z] [--submit-linux-build] [--skip-*]\n'; exit 0;; *) printf 'unknown argument: %s\n' "$1" >&2; exit 1;; esac; done
-          args=(); [[ -n "$version" ]] && args=(--version "$version"); nix run .#prepare-release -- "''${args[@]}"
+          version=""; revision="@"; validate=1; tag_release=1; build_artifact=1; upload_artifact=1; submit_refresh=1; submit_linux_build=0; allow_downgrade=0; linux_manifest=${q linuxManifest}
+          while [[ $# -gt 0 ]]; do case "$1" in --version) version="$2"; shift 2;; --revision) revision="$2"; shift 2;; --allow-downgrade) allow_downgrade=1; shift;; --skip-validate) validate=0; shift;; --skip-tag) tag_release=0; shift;; --skip-artifact) build_artifact=0; shift;; --skip-upload) upload_artifact=0; shift;; --skip-refresh) submit_refresh=0; shift;; --submit-linux-build) submit_linux_build=1; shift;; -h|--help) printf 'usage: release [--version X.Y.Z] [--allow-downgrade] [--submit-linux-build] [--skip-*]\n'; exit 0;; *) printf 'unknown argument: %s\n' "$1" >&2; exit 1;; esac; done
+          if [[ $validate -eq 1 ]]; then
+            (
+              export TERM=dumb
+              ${validateScript}
+            ) < /dev/null
+          fi
+          mutated=0
+          recovery_note() { printf '%s\n' 'release aborted after version stamping — inspect with "jj diff"; discard the prep commit with "jj abandon @" if you do not want it' >&2; }
+          on_exit() { status=$?; if [[ $status -ne 0 && $mutated -eq 1 ]]; then recovery_note; fi; exit "$status"; }
+          trap on_exit EXIT
+          args=(); [[ -n "$version" ]] && args+=(--version "$version"); [[ $allow_downgrade -eq 1 ]] && args+=(--allow-downgrade); nix run .#prepare-release -- "''${args[@]}"; mutated=1
           version="$(VERSION_FILE=${q versionFile} python3 -c 'import os,tomllib; data=tomllib.load(open(os.environ["VERSION_FILE"],"rb")); print(${versionExpr})')"; tag="v''${version#v}"
           if [[ -d .jj && -z "$(jj log -r @ --no-graph --color=never -T 'description.first_line()')" ]]; then jj describe -m "chore: release $tag"; fi
-          [[ $validate -eq 0 ]] || { ${validateScript}; }
           if [[ -d .jj ]]; then commit="$(jj log -r "$revision" --no-graph --color=never -T 'commit_id')"; else commit="$(git rev-parse "$revision")"; fi
           if [[ $tag_release -eq 1 ]]; then nix run .#release-tag -- --revision "$commit"; if [[ -d .jj ]]; then jj bookmark set main --revision "$commit"; jj git push --remote origin --bookmark main; fi; fi
           if [[ $build_artifact -eq 1 ]]; then nix build .#release-artifact --out-link result-release-artifact; fi
@@ -163,6 +174,7 @@
             ${refreshTrigger}
           fi
           if [[ $submit_linux_build -eq 1 ]]; then hut builds submit "$linux_manifest" --note "${pname} $tag linux release" --tags "${pname}/$tag/release" --visibility unlisted; fi
+          trap - EXIT
         '';
       };
 
@@ -229,15 +241,24 @@
     setCargoVersion = ''
       VERSION="$version" VERSION_MODE=${q versionMode} VERSION_FILE=${q versionFile} LOCK_PACKAGES=${q (lib.concatStringsSep "," lockPackages)} WORKSPACE_DEP_PINS=${q (lib.concatStringsSep "," workspaceDepPins)} python3 - <<'PY'
       from pathlib import Path
-      import os, re, tomllib
+      import os, re, sys, tomllib
       version = os.environ["VERSION"]
       version_file = Path(os.environ["VERSION_FILE"])
       mode = os.environ["VERSION_MODE"]
+      def parse_semver(value):
+          if not isinstance(value, str) or not re.fullmatch(r"v?\d+\.\d+\.\d+", value):
+              raise SystemExit(f"invalid semver version: {value}")
+          return tuple(int(part) for part in value.removeprefix("v").split("."))
+      data = tomllib.loads(version_file.read_text())
+      current = (data.get("workspace", {}).get("package", {}) if mode == "workspace" else data.get("package", {})).get("version")
+      current_tuple = parse_semver(current)
       if not version:
-          data = tomllib.loads(version_file.read_text())
-          version = (data.get("workspace", {}).get("package", {}) if mode == "workspace" else data.get("package", {})).get("version")
-      if not isinstance(version, str) or not re.fullmatch(r"v?\d+\.\d+\.\d+", version):
-          raise SystemExit(f"invalid semver version: {version}")
+          version = current
+      requested_tuple = parse_semver(version)
+      if requested_tuple < current_tuple and os.environ.get("ALLOW_DOWNGRADE") != "1":
+          raise SystemExit(f"refusing version downgrade: requested {version.removeprefix('v')} is lower than current {current.removeprefix('v')} (pass --allow-downgrade to override)")
+      if requested_tuple == current_tuple:
+          print(f"prepare-release: requested version {version.removeprefix('v')} matches current version", file=sys.stderr)
       version = version.removeprefix("v")
       text = version_file.read_text()
       if mode == "workspace":
@@ -294,7 +315,7 @@
     ciTest = pkgs.writeShellApplication {
       name = "ci-test";
       runtimeInputs = ciToolchain;
-      text = darwinLinkEnv + "\ncargo test --workspace\n";
+      text = darwinLinkEnv + "\nTERM=dumb cargo test --workspace < /dev/null\n";
     };
     releaseArtifact = core.mkReleaseTarball {
       inherit pkgs pname version;
