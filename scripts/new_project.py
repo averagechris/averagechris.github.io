@@ -438,7 +438,7 @@ def release_manifest(args: argparse.Namespace) -> str:
     return f"""
     image: nixos/unstable
     arch: x86_64
-    oauth: git.sr.ht/OBJECTS:RW builds.sr.ht/JOBS:RW meta.sr.ht/PROFILE:RO
+    oauth: git.sr.ht/OBJECTS:RW git.sr.ht/REPOSITORIES:RO git.sr.ht/PROFILE:RO builds.sr.ht/JOBS:RW builds.sr.ht/SECRETS:RO meta.sr.ht/PROFILE:RO
     environment:
       GIT_CONFIG_COUNT: "1"
       GIT_CONFIG_KEY_0: http.userAgent

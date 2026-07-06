@@ -13,8 +13,11 @@
     # nixos/unstable image, which has NO system python3 or hut on PATH — use
     # awk/sed for version extraction and `nix shell nixpkgs#hut --command hut`
     # for uploads/submits (see workctl's manifest for the reference shape).
-    # Required oauth grants for the job:
-    #   git.sr.ht/OBJECTS:RW builds.sr.ht/JOBS:RW meta.sr.ht/PROFILE:RO
+    # Required oauth grants for the job (repo lookup needs git PROFILE:RO +
+    # REPOSITORIES:RO; artifact upload needs OBJECTS:RW; submitting the
+    # site-refresh manifest needs JOBS:RW + SECRETS:RO):
+    #   git.sr.ht/OBJECTS:RW git.sr.ht/REPOSITORIES:RO git.sr.ht/PROFILE:RO
+    #   builds.sr.ht/JOBS:RW builds.sr.ht/SECRETS:RO meta.sr.ht/PROFILE:RO
     # (sr.ht pre-provisions ~/.config/hut/config from the grant.)
     mkPrepareRelease = {
       pkgs,
