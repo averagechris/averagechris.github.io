@@ -37,6 +37,7 @@ RESERVED_OUTPUT_NAMES = {
     "release",
     "release-artifact",
     "release-tag",
+    "static-checks",
 }
 RESERVED_SITE_PATHS = {
     "404",
@@ -396,7 +397,7 @@ def flake_nix(args: argparse.Namespace) -> str:
           ci-deny = {{type = "app"; program = "${{self.packages.${{system}}.ci-deny}}/bin/ci-deny";}};
           ci-machete = {{type = "app"; program = "${{self.packages.${{system}}.ci-machete}}/bin/ci-machete";}};
           ci-sort = {{type = "app"; program = "${{self.packages.${{system}}.ci-sort}}/bin/ci-sort";}};
-          inherit ((fleetApps system).apps) prepare-release release-tag release ci-fmt ci-clippy ci-test;
+          inherit ((fleetApps system).apps) prepare-release release-tag release ci-fmt ci-clippy static-checks ci-test;
         }});
 
         checks = forAllSystems (system: {{
@@ -545,6 +546,7 @@ def readme(args: argparse.Namespace) -> str:
     nix run . -- --help
     nix run .#ci-fmt
     nix run .#ci-clippy
+    nix run .#static-checks
     nix run .#ci-test
     ```
 
@@ -569,7 +571,7 @@ def agents_md(args: argparse.Namespace) -> str:
 
     - Enter the toolchain with `direnv allow` or `nix develop`.
     - Nix formatting uses wrapped `alejandra -q`; run `nix fmt` or `nix fmt -- --check .`.
-    - Prefer local checks: `nix run .#ci-fmt`, `nix run .#ci-clippy`, `nix run .#ci-test`, `nix run .#ci-machete`, `nix run .#ci-sort`, `nix run .#ci-deny`, `nix run .#ci-audit`.
+    - Prefer local checks: `nix run .#static-checks` (fmt + clippy), `nix run .#ci-test`, `nix run .#ci-machete`, `nix run .#ci-sort`, `nix run .#ci-deny`, `nix run .#ci-audit`.
     - `.builds/ci.yml` runs fmt, clippy, test, and the package build on every push.
 
     ## sccache
@@ -587,6 +589,7 @@ def agents_md(args: argparse.Namespace) -> str:
     nix run .#prepare-release -- --version X.Y.Z
     nix run .#release-tag
     nix build .#release-artifact
+    nix run .#static-checks
     nix run .#release -- --version X.Y.Z --submit-linux-build
     ```
 

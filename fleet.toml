@@ -3,11 +3,13 @@
 # Used by `nix run .#fleet-status` and by agent-driven maintenance
 # (see AGENTS.md). Every repo here is expected to expose:
 #
+# Repos may set `ecosystem = "rust"` or `ecosystem = "go"`; omitted means rust.
+#
 #   nix run .#prepare-release -- --version X.Y.Z
 #   nix run .#release-tag
 #   nix build .#release-artifact
 #   nix run .#release -- --version X.Y.Z [--submit-linux-build] [--skip-*]
-#   nix run .#ci-fmt | ci-clippy | ci-test
+#   nix run .#ci-fmt | ci-clippy/ci-vet | static-checks | ci-test
 #
 # plus: annotated vX.Y.Z tags with attached sr.ht artifacts, release manifest at
 # builds/release-linux-x86_64.yml (explicit `hut builds submit` only — NOT
@@ -21,8 +23,30 @@ required_apps = [
   "release-tag",
   "release",
   "ci-fmt",
-  "ci-clippy",
   "ci-test",
+]
+advisory_apps = ["static-checks"]
+
+[fleet.ecosystems.rust]
+required_apps = ["ci-clippy"]
+
+[fleet.ecosystems.go]
+required_apps = ["ci-vet"]
+
+[[repos]]
+name = "hister"
+local = "/Users/chris/projects/hister"
+pages_subdir = "hister"
+version_file = "webui/app/package.json"
+artifact_prefix = "hister"
+srht_repo = "hister"
+binaries = ["hister"]
+ecosystem = "go"
+quirks = [
+  "Go repo — ci-vet instead of ci-clippy",
+  "version source of truth is webui/app/package.json",
+  "release apps are repo-local scripts (not fleet-lib presets); prepare-release rewrites the linux manifest version itself",
+  "static-checks composes gofmt check + nixfmt flake.nix check + go vet",
 ]
 
 [[repos]]

@@ -15,8 +15,14 @@ nix run .#prepare-release -- --version X.Y.Z   # bump version, date CHANGELOG, f
 nix run .#release-tag                          # annotated vX.Y.Z tag + push
 nix build .#release-artifact                   # reproducible tarball + .sha256
 nix run .#release -- --version X.Y.Z [--submit-linux-build] [--skip-*]
+nix run .#static-checks                        # ecosystem-agnostic cheap static gate
 nix run .#ci-fmt / ci-clippy / ci-test         # lint gates (repo extras allowed)
 ```
+
+`static-checks` is the one ecosystem-agnostic static gate: Rust composes fmt
+check + clippy, Go composes fmt check + vet, and Python will compose ruff check
++ mypy. `fleet.toml` records each repo's `ecosystem` (`rust` or `go`; omitted
+means `rust`) so fleet tooling can require the right per-ecosystem apps.
 
 Conventions: conventional commits; `CHANGELOG.md` with `## Unreleased`;
 annotated `vX.Y.Z` tags (required for sr.ht ref artifacts) with attached sr.ht
@@ -25,6 +31,8 @@ Pages publishing; jj-first VCS; release manifest at `builds/release-linux-x86_64
 (runs only on explicit `hut builds submit` — never in `.builds/`);
 `.jj-lint.toml` includes at least fmt+clippy+test. Per-repo quirks are recorded
 in `fleet.toml` — read them before touching a repo.
+hut usage in the fleet release tooling is slated to be replaced by srht (the
+in-house CLI) now that it works — deferred to an upcoming session.
 
 Check conformance: `nix run .#fleet-status` (add `--nix` to verify flake apps).
 Shared release helpers live under `lib.fleet.core`; Rust repos use

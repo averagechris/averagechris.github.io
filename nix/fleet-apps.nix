@@ -222,6 +222,12 @@
     # Extra packages on PATH for the ci-* apps, e.g. interpreters that tests
     # spawn as subprocesses (CI images have no system python3 etc.).
     ciExtraInputs ? [],
+    ciFmt ? null,
+    ciClippy ? null,
+    # Extra cheap static gates to compose into the ecosystem-agnostic
+    # static-checks app (e.g. deny, machete, statix). These are derivations,
+    # not flake app names, so running static-checks does not re-evaluate Nix.
+    extraStaticChecks ? [],
     ...
   }: let
     cargoVersionExpr =
@@ -302,15 +308,27 @@
       ciApps = ["ci-fmt" "ci-clippy" "ci-test"];
       artifactPackage = releaseArtifact;
     };
-    ciFmt = pkgs.writeShellApplication {
+    defaultCiFmt = pkgs.writeShellApplication {
       name = "ci-fmt";
       runtimeInputs = ciToolchain;
       text = darwinLinkEnv + "\ncargo fmt --all -- --check\n";
     };
-    ciClippy = pkgs.writeShellApplication {
+    defaultCiClippy = pkgs.writeShellApplication {
       name = "ci-clippy";
       runtimeInputs = ciToolchain;
       text = darwinLinkEnv + "\ncargo clippy --locked --workspace --all-targets -- -D warnings\n";
+    };
+    ciFmtDrv =
+      if ciFmt == null
+      then defaultCiFmt
+      else ciFmt;
+    ciClippyDrv =
+      if ciClippy == null
+      then defaultCiClippy
+      else ciClippy;
+    staticChecks = pkgs.writeShellApplication {
+      name = "static-checks";
+      text = lib.concatMapStringsSep "\n" (drv: "${lib.getExe drv}") ([ciFmtDrv ciClippyDrv] ++ extraStaticChecks);
     };
     ciTest = pkgs.writeShellApplication {
       name = "ci-test";
@@ -330,8 +348,9 @@
       prepare-release = app prepareRelease;
       release-tag = app releaseTag;
       release = app release;
-      ci-fmt = app ciFmt;
-      ci-clippy = app ciClippy;
+      ci-fmt = app ciFmtDrv;
+      ci-clippy = app ciClippyDrv;
+      static-checks = app staticChecks;
       ci-test = app ciTest;
     };
     inherit releaseArtifact;

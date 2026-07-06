@@ -130,6 +130,7 @@
         release
         ci-fmt
         ci-clippy
+        static-checks
         ci-test
         ;
     });

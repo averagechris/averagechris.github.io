@@ -47,6 +47,30 @@ def nix_system() -> str:
     return f"{machine}-{system}"
 
 
+def repo_ecosystem(entry: dict) -> str:
+    """Return repo ecosystem; omitted means rust for backward compatibility."""
+    return entry.get("ecosystem", "rust")
+
+
+def required_apps(entry: dict, config: dict) -> list[str]:
+    fleet = config["fleet"]
+    ecosystem = repo_ecosystem(entry)
+    ecosystems = fleet.get("ecosystems", {})
+    extras = ecosystems.get(ecosystem, {}).get("required_apps", [])
+    return [*fleet["required_apps"], *extras]
+
+
+def read_version(version_file: pathlib.Path) -> str | None:
+    if version_file.suffix == ".json":
+        manifest = json.loads(version_file.read_text())
+        version = manifest.get("version")
+    else:
+        manifest = tomllib.loads(version_file.read_text())
+        package = manifest.get("package") or manifest.get("workspace", {}).get("package") or {}
+        version = package.get("version")
+    return version if isinstance(version, str) else None
+
+
 def check_repo(entry: dict, config: dict, use_nix: bool) -> list[tuple[str, str]]:
     """Return list of (level, message) where level is ok|warn|fail."""
     results: list[tuple[str, str]] = []
@@ -70,9 +94,7 @@ def check_repo(entry: dict, config: dict, use_nix: bool) -> list[tuple[str, str]
     version_file = repo / entry["version_file"]
     version = None
     if version_file.exists():
-        manifest = tomllib.loads(version_file.read_text())
-        package = manifest.get("package") or manifest.get("workspace", {}).get("package") or {}
-        version = package.get("version")
+        version = read_version(version_file)
         if version is None:
             results.append(("fail", f"no package version in {entry['version_file']}"))
     else:
@@ -116,11 +138,14 @@ def check_repo(entry: dict, config: dict, use_nix: bool) -> list[tuple[str, str]
             results.append(("fail", "nix flake show failed"))
         else:
             apps = set(json.loads(out).get("apps", {}).get(nix_system(), {}))
-            missing = [app for app in config["fleet"]["required_apps"] if app not in apps]
+            missing = [app for app in required_apps(entry, config) if app not in apps]
             if missing:
                 results.append(("fail", f"missing flake apps: {', '.join(missing)}"))
             else:
-                results.append(("ok", "all required flake apps present"))
+                results.append(("ok", f"all required flake apps present ({repo_ecosystem(entry)})"))
+            advisory_missing = [app for app in config["fleet"].get("advisory_apps", []) if app not in apps]
+            if advisory_missing:
+                results.append(("warn", f"missing advisory flake apps: {', '.join(advisory_missing)} (pending fleet-lib lock bump)"))
 
     return results
 
