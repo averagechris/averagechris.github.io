@@ -63,6 +63,7 @@
             pkgs.hut
             pkgs.git
             pkgs.curl
+            pkgs.zola
           ];
           text = ''
             ${repoScripts}
