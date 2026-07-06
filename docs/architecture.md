@@ -77,6 +77,21 @@ intentionally keeps site-domain-dependent strings only where current published
 state and download manifests already require exact URLs; renderers receive the
 domain/base URL separately for new links.
 
+## Renderer swap validation
+
+Before replacing the site's renderer in production (for example, moving from the
+current Python string-template renderer to Zola), build the old and new outputs
+into separate directories and compare them with
+`python3 scripts/compare_site_trees.py OLD_TREE NEW_TREE --ignore-volatile`.
+The harness checks URL inventory, structural HTML signals (titles, metadata,
+headings, links, and visible content mass), and byte equality for non-HTML files
+such as downloads, `.sha256` files, images, and JSON.
+
+Use this as the local validation gate after pages-alike server QA and before the
+production cutover. Missing HTML pages, downloads, SHA files, HTML structural
+drift, or non-HTML byte mismatches are blockers unless the URL/content change is
+intentional and documented.
+
 ## Shared fleet tooling
 
 `nix/fleet-apps.nix` exports `lib.fleet.core` plus language presets. The core
