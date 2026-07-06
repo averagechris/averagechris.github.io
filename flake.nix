@@ -9,12 +9,14 @@
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
     flake-utils.url = "github:numtide/flake-utils";
+    srht.url = "git+https://git.sr.ht/~averagechris/srht";
   };
 
   outputs = {
     self,
     nixpkgs,
     flake-utils,
+    srht,
   }:
     {
       lib = import ./nix/fleet-apps.nix {lib = nixpkgs.lib;};
@@ -26,6 +28,7 @@
     // flake-utils.lib.eachDefaultSystem (
       system: let
         pkgs = nixpkgs.legacyPackages.${system};
+        srhtPackage = srht.packages.${system}.srht;
         python = pkgs.python3.withPackages (ps: [ps.markdown]);
 
         mkApp = name: script: {
@@ -35,7 +38,7 @@
               inherit name;
               runtimeInputs = [
                 python
-                pkgs.hut
+                srhtPackage
               ];
               text = script;
             }
@@ -60,7 +63,7 @@
           name = "refresh-pages";
           runtimeInputs = [
             python
-            pkgs.hut
+            srhtPackage
             pkgs.git
             pkgs.curl
             pkgs.zola
@@ -165,9 +168,19 @@
             fi
             site_config_args=()
             if [[ -f dist/siteconfig.json ]]; then
-              site_config_args=(--site-config dist/siteconfig.json)
+              site_config_args=(--site-config-not-found 404.html)
             fi
-            exec hut pages publish "$tarball" --domain "$domain" "''${site_config_args[@]}"
+            if [[ -z "''${SRHT_TOKEN:-}" && -f "''${HOME:-}/.config/hut/config" ]]; then
+              export SRHT_TOKEN="$(python3 - <<'PY'
+            from pathlib import Path
+            import re, os
+            config = Path(os.environ["HOME"]) / ".config" / "hut" / "config"
+            match = re.search(r'(?m)^oauth-token\s*=\s*"?([^"\s]+)', config.read_text())
+            print(match.group(1) if match else "")
+            PY
+              )"
+            fi
+            exec srht pages publish "$tarball" --domain "$domain" "''${site_config_args[@]}"
           '';
 
           refresh-pages = {
@@ -209,7 +222,7 @@
           packages = [
             python
             pkgs.alejandra
-            pkgs.hut
+            srhtPackage
             pkgs.zola
           ];
         };

@@ -10,15 +10,21 @@
     # validation behavior while keeping the fleet command names stable.
     #
     # Linux release manifests (builds/release-linux-x86_64.yml) run on the
-    # nixos/unstable image, which has NO system python3 or hut on PATH — use
-    # awk/sed for version extraction and `nix shell nixpkgs#hut --command hut`
+    # nixos/unstable image, which has NO system python3 or srht on PATH — use
+    # awk/sed for version extraction and `nix run git+https://git.sr.ht/~averagechris/srht --`
     # for uploads/submits (see workctl's manifest for the reference shape).
     # Required oauth grants for the job (repo lookup needs git PROFILE:RO +
     # REPOSITORIES:RO; artifact upload needs OBJECTS:RW; submitting the
     # site-refresh manifest needs JOBS:RW + SECRETS:RO):
     #   git.sr.ht/OBJECTS:RW git.sr.ht/REPOSITORIES:RO git.sr.ht/PROFILE:RO
     #   builds.sr.ht/JOBS:RW builds.sr.ht/SECRETS:RO meta.sr.ht/PROFILE:RO
-    # (sr.ht pre-provisions ~/.config/hut/config from the grant.)
+    # srht reads SRHT_TOKEN directly. sr.ht CI oauth grants still pre-provision
+    # ~/.config/hut/config, so generated manifests export SRHT_TOKEN from that
+    # file before invoking srht.
+    # IMPORTANT: sr.ht only provisions a manifest's `oauth:` bearer token when
+    # the job is submitted with secrets ENABLED. srht defaults to secrets
+    # disabled (agent safety), so every submit of an oauth-grant manifest here
+    # must pass --secrets or the job's token (and hut config) never appears.
     mkPrepareRelease = {
       pkgs,
       pname,
@@ -141,7 +147,7 @@
             cd averagechris.srht.site
             nix run .#refresh-pages
       EOF
-      hut builds submit "$tmp" --note "site refresh: ${pname} $tag" --visibility unlisted
+      srht builds submit "$tmp" --secrets --note "site refresh: ${pname} $tag"
     '';
 
     mkRelease = {
@@ -165,9 +171,10 @@
     in
       pkgs.writeShellApplication {
         name = "release";
-        runtimeInputs = (with pkgs; [coreutils git hut jujutsu nix python3]) ++ runtimeInputs;
+        runtimeInputs = (with pkgs; [coreutils git jujutsu nix python3]) ++ runtimeInputs;
         text = ''
           set -euo pipefail; repo_root="$(git rev-parse --show-toplevel 2>/dev/null || jj root)"; cd "$repo_root"
+          srht() { nix run 'git+https://git.sr.ht/~averagechris/srht' -- "$@"; }
           version=""; revision="@"; validate=1; tag_release=1; build_artifact=1; upload_artifact=1; submit_refresh=1; submit_linux_build=0; allow_downgrade=0; linux_manifest=${q linuxManifest}
           while [[ $# -gt 0 ]]; do case "$1" in --version) version="$2"; shift 2;; --revision) revision="$2"; shift 2;; --allow-downgrade) allow_downgrade=1; shift;; --skip-validate) validate=0; shift;; --skip-tag) tag_release=0; shift;; --skip-artifact) build_artifact=0; shift;; --skip-upload) upload_artifact=0; shift;; --skip-refresh) submit_refresh=0; shift;; --submit-linux-build) submit_linux_build=1; shift;; -h|--help) printf 'usage: release [--version X.Y.Z] [--allow-downgrade] [--submit-linux-build] [--skip-*]\n'; exit 0;; *) printf 'unknown argument: %s\n' "$1" >&2; exit 1;; esac; done
           if [[ $validate -eq 1 ]]; then
@@ -186,11 +193,11 @@
           if [[ -d .jj ]]; then commit="$(jj log -r "$revision" --no-graph --color=never -T 'commit_id')"; else commit="$(git rev-parse "$revision")"; fi
           if [[ $tag_release -eq 1 ]]; then nix run .#release-tag -- --revision "$commit"; if [[ -d .jj ]]; then jj bookmark set main --revision "$commit"; jj git push --remote origin --bookmark main; fi; fi
           if [[ $build_artifact -eq 1 ]]; then nix build .#release-artifact --out-link result-release-artifact; fi
-          if [[ $upload_artifact -eq 1 ]]; then for f in result-release-artifact/*.tar.gz; do hut git artifact upload -r ${q srhtRepo} --rev "$tag" "$f" "$f.sha256"; done; fi
+          if [[ $upload_artifact -eq 1 ]]; then for f in result-release-artifact/*.tar.gz; do srht git artifact upload -r ${q srhtRepo} --rev "$tag" "$f"; srht git artifact upload -r ${q srhtRepo} --rev "$tag" "$f.sha256"; done; fi
           if [[ $submit_refresh -eq 1 ]]; then
             ${refreshTrigger}
           fi
-          if [[ $submit_linux_build -eq 1 ]]; then hut builds submit "$linux_manifest" --note "${pname} $tag linux release" --tags "${pname}/$tag/release" --visibility unlisted; fi
+          if [[ $submit_linux_build -eq 1 ]]; then srht builds submit "$linux_manifest" --secrets --note "${pname} $tag linux release" --tag "${pname}/$tag/release"; fi
           trap - EXIT
         '';
       };

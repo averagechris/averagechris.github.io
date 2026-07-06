@@ -295,12 +295,14 @@ def flake_nix(args: argparse.Namespace) -> str:
       inputs = {{
         nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
         fleet.url = "git+https://git.sr.ht/~averagechris/averagechris.srht.site";
+        srht.url = "git+https://git.sr.ht/~averagechris/srht";
       }};
 
       outputs = {{
         self,
         nixpkgs,
         fleet,
+        srht,
       }}: let
         systems = [
           "aarch64-darwin"
@@ -418,14 +420,13 @@ def flake_nix(args: argparse.Namespace) -> str:
               cargo-sort
               clippy
               direnv
-              hut
               jujutsu
               nixd
               rust-analyzer
               rustc
               rustfmt
               sccache
-            ];
+            ] ++ [srht.packages.${{system}}.srht];
           }};
         }});
 
@@ -461,7 +462,8 @@ def release_manifest(args: argparse.Namespace) -> str:
       - upload-and-refresh: |
           set -eu
           cd {args.srht_repo}
-          hut() {{ nix shell --inputs-from . nixpkgs#hut --command hut "$@"; }}
+          srht() {{ nix run 'git+https://git.sr.ht/~averagechris/srht' -- "$@"; }}
+          export SRHT_TOKEN="${{SRHT_TOKEN:-$(awk -F ' *= *' '$1 == "oauth-token" {{ gsub(/\"/, "", $2); print $2; exit }}' ~/.config/hut/config)}}"
           version="$(awk '/^\\[package\\]/{{s=1}} s && /^version = /{{gsub(/"/,"",$3); print $3; exit}}' Cargo.toml)"
           tag="v${{version#v}}"
           commit="$(git rev-parse HEAD)"
@@ -469,7 +471,8 @@ def release_manifest(args: argparse.Namespace) -> str:
           set -- result-release-artifact/*.tar.gz
           [ -e "$1" ] || {{ printf '%s\\n' 'no release artifacts found' >&2; exit 1; }}
           for artifact do
-            hut git artifact upload -r {args.srht_repo} --rev "$tag" "$artifact" "$artifact.sha256"
+            srht git artifact upload -r {args.srht_repo} --rev "$tag" "$artifact"
+            srht git artifact upload -r {args.srht_repo} --rev "$tag" "$artifact.sha256"
           done
 
           manifest="$(mktemp)"
@@ -496,7 +499,7 @@ def release_manifest(args: argparse.Namespace) -> str:
                 cd averagechris.srht.site
                 nix run .#refresh-pages
           EOF
-          hut builds submit "$manifest" --note "site refresh: {args.artifact_prefix} $tag" --visibility unlisted
+          srht builds submit "$manifest" --secrets --note "site refresh: {args.artifact_prefix} $tag"
     artifacts:
       - artifacts/{artifact}
       - artifacts/{artifact}.sha256

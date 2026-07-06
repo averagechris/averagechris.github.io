@@ -9,12 +9,14 @@
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
     fleet.url = "git+https://git.sr.ht/~averagechris/averagechris.srht.site";
+    srht.url = "git+https://git.sr.ht/~averagechris/srht";
   };
 
   outputs = {
     self,
     nixpkgs,
     fleet,
+    srht,
   }: let
     systems = [
       "aarch64-darwin"
@@ -144,24 +146,25 @@
         pkgs = pkgsFor system;
       in {
         default = pkgs.mkShell {
-          packages = with pkgs; [
-            alejandra
-            cargo
-            cargo-audit
-            cargo-deny
-            cargo-machete
-            cargo-outdated
-            cargo-sort
-            clippy
-            direnv
-            hut
-            jujutsu
-            nixd
-            rust-analyzer
-            rustc
-            rustfmt
-            sccache
-          ];
+          packages = with pkgs;
+            [
+              alejandra
+              cargo
+              cargo-audit
+              cargo-deny
+              cargo-machete
+              cargo-outdated
+              cargo-sort
+              clippy
+              direnv
+              jujutsu
+              nixd
+              rust-analyzer
+              rustc
+              rustfmt
+              sccache
+            ]
+            ++ [srht.packages.${system}.srht];
         };
       }
     );
