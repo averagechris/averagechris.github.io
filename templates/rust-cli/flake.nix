@@ -159,6 +159,7 @@
             rust-analyzer
             rustc
             rustfmt
+            sccache
           ];
         };
       }

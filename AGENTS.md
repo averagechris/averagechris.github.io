@@ -55,6 +55,13 @@ review and apply registry updates explicitly. Default homepage tier metadata is
 - The nixos/unstable build image has no system python3 or hut; the `build`
   user IS in trusted-users, so `NIX_CONFIG` `extra-substituters` in a
   manifest's environment works without extra ceremony.
+- On the nixos/unstable build image, `packages:` entries must be channel-prefixed
+  (for example, `nixos.git`); unprefixed names fail during setup before any task
+  runs. Avoid `packages:` entirely when Nix apps can provide the needed tools.
+- In manifests that need hut after `cd <repo>`, prefer
+  `nix shell --inputs-from . nixpkgs#hut --command hut ...` so Nix reuses the
+  repo's locked nixpkgs instead of downloading/evaluating a second registry
+  unstable tarball.
 - CI pulls from the `averagechris-dotfiles` cachix cache: every new build
   manifest should copy the NIX_CONFIG substituter block from
   `.builds/refresh-pages.yml`. `.builds/cache-flake.yml` builds and pushes this
