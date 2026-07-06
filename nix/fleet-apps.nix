@@ -89,8 +89,25 @@
           version="$(VERSION_FILE=${q versionFile} python3 -c 'import os,tomllib; data=tomllib.load(open(os.environ["VERSION_FILE"],"rb")); v=${versionExpr}; assert isinstance(v,str) and v; print(v)')"
           [[ "$version" =~ ^v?[0-9]+\.[0-9]+\.[0-9]+$ ]] || { printf 'version must be semver\n' >&2; exit 1; }
           tag="v''${version#v}"
-          [[ -z "$(git ls-remote --tags origin "refs/tags/$tag" 2>/dev/null)" ]] || { printf 'remote tag exists: %s\n' "$tag" >&2; exit 1; }
           if [[ -d .jj ]]; then commit="$(jj log -r "$revision" --no-graph --color=never -T 'commit_id')"; else commit="$(git rev-parse "$revision")"; fi
+
+          remote_tag_ref="$(git ls-remote --tags origin "refs/tags/$tag" 2>/dev/null || true)"
+          if [[ -n "$remote_tag_ref" ]]; then
+            remote_tag_sha="''${remote_tag_ref%%$'\t'*}"
+            remote_peeled_ref="$(git ls-remote origin "refs/tags/$tag^{}" 2>/dev/null || true)"
+            if [[ -n "$remote_peeled_ref" ]]; then
+              remote_commit="''${remote_peeled_ref%%$'\t'*}"
+            else
+              remote_commit="$remote_tag_sha"
+            fi
+            if [[ "$remote_commit" == "$commit" ]]; then
+              printf 'tag %s already exists at %s, skipping tag creation\n' "$tag" "$commit" >&2
+              exit 0
+            fi
+            printf 'remote tag %s exists at %s, but release target is %s\n' "$tag" "$remote_commit" "$commit" >&2
+            exit 1
+          fi
+
           git -c tag.gpgSign=false tag -fa "$tag" -m "${pname} $tag" "$commit"
           git push origin "refs/tags/$tag"
         '';
