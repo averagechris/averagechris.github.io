@@ -1,0 +1,23 @@
+  document.getElementById("theme-toggle").addEventListener("click", function () {
+    var next = document.documentElement.dataset.theme === "moon" ? "dawn" : "moon";
+    document.documentElement.dataset.theme = next;
+    try { localStorage.setItem("theme", next); } catch (e) {}
+  });
+  matchMedia("(prefers-color-scheme: dark)").addEventListener("change", function (event) {
+    var stored = null;
+    try { stored = localStorage.getItem("theme"); } catch (e) {}
+    if (!stored) document.documentElement.dataset.theme = event.matches ? "moon" : "dawn";
+  });
+  document.addEventListener("click", function (event) {
+    var button = event.target.closest("button.copy");
+    if (!button) return;
+    var text = button.dataset.copy || "";
+    function done() {
+      var old = button.textContent;
+      button.textContent = "copied";
+      setTimeout(function () { button.textContent = old; }, 1200);
+    }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(done).catch(function () {});
+    }
+  });

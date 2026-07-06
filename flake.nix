@@ -48,6 +48,7 @@
             python
             pkgs.git
             pkgs.curl
+            pkgs.zola
           ];
           text = ''
             ${repoScripts}
@@ -208,6 +209,7 @@
             python
             pkgs.alejandra
             pkgs.hut
+            pkgs.zola
           ];
         };
 

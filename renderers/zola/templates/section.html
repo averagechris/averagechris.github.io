@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% import "macros.html" as ui %}
+{% block content %}
+{% if section.extra.kind == "home" %}
+  <header>
+    <div class="masthead">
+      <div class="identity">{% if data.site.portrait %}
+      <img class="portrait" src="{{ data.site.portrait }}" alt="{{ data.site.name }}" width="88" height="88">{% endif %}
+      <div>
+        <h1>{{ data.site.name }} <small>{{ data.site.title }}</small></h1>{% if data.site.tagline %}
+        <p class="tagline">{{ data.site.tagline }}</p>{% endif %}
+      </div>
+      </div>
+      <button class="theme-toggle" id="theme-toggle" aria-label="toggle color theme">dawn &frasl; moon</button>
+    </div>
+    <nav class="profile-links">{% for link in data.site.links %}<a href="{{ link.url }}">{{ link.label }}</a> {% endfor %}<a href="/tools/">tools</a> {% for page in data.nav_pages %}<a href="/{{ page.slug }}/">{{ page.slug }}</a> {% endfor %}{% if data.notes %}<a href="/notes/">notes</a>{% endif %}</nav>
+  </header>
+
+{% for paragraph in data.site.about_paragraphs %}  <p class="about">{{ paragraph }}</p>
+{% endfor %}{% if data.now %}
+  <section class="content">
+    <h2>Now</h2>
+    <p class="muted">updated {{ data.now.date }}</p>
+{{ data.now.body | markdown | safe }}
+  </section>{% endif %}
+
+  <hr class="divider">
+
+  <h2>Projects</h2>
+  <p class="muted">all current versions + install one-liners on <a href="/tools/">one tools page</a>.</p>
+  <section class="projects">
+{% for project in data.projects %}{% if project.tier != "more" %}
+    <article class="project">
+      {% if project.version %}<span class="version">{{ project.version }}</span>{% endif %}<h3>{{ project.name }}</h3>
+      <p>{{ project.description }}</p>
+      {% if project.platforms %}<p class="mono muted">{{ project.platforms | join(sep=" · ") }}{% if project.date %} — {{ project.date }}{% endif %}</p>{% elif project.date %}<p class="mono muted">{{ project.date }}</p>{% endif %}
+      <p class="project-links">{% if project.has_downloads %}{% if project.published == false %}<span class="pending">no release yet</span>{% else %}<a class="primary-link" href="{{ project.downloads_url }}">downloads</a> {% for link in project.info_links_home %}<a href="{{ link.url }}">{{ link.label }}</a> {% endfor %}{% endif %}{% endif %}{% for link in project.extra_links %}<a href="{{ link.url }}">{{ link.label }}</a> {% endfor %}<a href="{{ project.repo }}">source</a></p>
+      {% if project.install_rows %}<details class="install"><summary>install</summary>{{ ui::install_rows(rows=project.install_rows) }}</details>{% endif %}
+    </article>{% endif %}{% endfor %}
+  </section>{% set more = data.projects | filter(attribute="tier", value="more") %}{% if more %}
+  <hr class="divider">
+
+  <h2>More projects</h2>
+  <ul class="more-projects">
+{% for project in more %}    <li><a href="{{ project.repo }}">{{ project.name }}</a> &mdash; {{ project.description }}{% set links_len = project.extra_links | length + project.info_links_home | length %}{% if project.has_downloads %}{% set links_len = links_len + 1 %}{% endif %}{% if links_len > 0 %} ({% if project.has_downloads %}<a href="{{ project.downloads_url }}">downloads</a>{% endif %}{% for link in project.info_links_home %} · <a href="{{ link.url }}">{{ link.label }}</a>{% endfor %}{% for link in project.extra_links %} · <a href="{{ link.url }}">{{ link.label }}</a>{% endfor %}){% endif %}</li>
+{% endfor %}  </ul>
+{% endif %}{% endif %}
+{% endblock content %}

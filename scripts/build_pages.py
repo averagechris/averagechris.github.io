@@ -984,6 +984,12 @@ def render_python_site(repo: pathlib.Path, config: dict, site_dir: pathlib.Path,
     return slugs, notes
 
 
+def render_zola_site(repo: pathlib.Path, config: dict, site_dir: pathlib.Path, base_url: str, fleet_json: dict) -> tuple[set[str], list[dict[str, object]]]:
+    from materialize_zola import render_zola_site as zola_render
+
+    return zola_render(repo, config, site_dir, base_url, fleet_json)
+
+
 def assemble_site(repo: pathlib.Path, out_dir: pathlib.Path, site_dir: pathlib.Path, state: dict) -> None:
     (site_dir / "state.json").write_text(json.dumps(state, indent=2, sort_keys=True) + "\n")
     assets_dir = repo / "assets"
@@ -1008,9 +1014,6 @@ def main() -> None:
     parser.add_argument("--out", default="dist")
     parser.add_argument("--renderer", choices=("python", "zola"), default="python")
     args = parser.parse_args()
-    if args.renderer == "zola":
-        fail("renderer 'zola' is not implemented yet; use --renderer python")
-
     repo = pathlib.Path(__file__).resolve().parent.parent
     loaded = load_site_data(repo)
     config = {"site": dict(loaded.site), "projects": loaded.projects, "pages": loaded.pages, "notes": loaded.notes}
@@ -1030,7 +1033,10 @@ def main() -> None:
     fleet_json["release_dates"] = update_release_dates(repo, fleet_json["meta"])
     fleet_json_path = write_fleet_json(repo, fleet_json)
     fleet_json = load_fleet_json(fleet_json_path)
-    render_python_site(repo, config, site_dir, base_url, fleet_json)
+    if args.renderer == "python":
+        render_python_site(repo, config, site_dir, base_url, fleet_json)
+    else:
+        render_zola_site(repo, config, site_dir, base_url, fleet_json)
     assemble_site(repo, out_dir, site_dir, fleet_json["state"])
 
 

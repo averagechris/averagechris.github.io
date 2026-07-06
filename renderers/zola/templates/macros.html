@@ -1,0 +1,44 @@
+{% macro head(title, desc, url, portrait="", home=false) -%}
+<meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="{{ desc }}">
+  <link rel="canonical" href="{{ url }}">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <meta property="og:title" content="{{ title }}">
+  <meta property="og:description" content="{{ desc }}">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="{{ url }}">{% if home and portrait %}
+  <meta property="og:image" content="{{ url ~ portrait }}">{% endif %}
+  <title>{{ title }}</title>
+  {{ self::head_script() }}
+  <style>
+{% include "style.html" %}  </style>
+{%- endmacro %}
+{% macro masthead() -%}
+<header>
+    <div class="masthead">
+      <h1><a href="/">~averagechris</a></h1>
+      <button class="theme-toggle" id="theme-toggle" aria-label="toggle color theme">dawn &frasl; moon</button>
+    </div>
+  </header>
+  <hr class="divider">
+{%- endmacro %}
+{% macro footer() -%}
+<footer>
+    <p>Source for this page: <a href="https://git.sr.ht/~averagechris/averagechris.srht.site">averagechris.srht.site</a>.</p>
+  </footer>
+{%- endmacro %}
+{% macro head_script() -%}
+<script>
+{% include "head_script.html" %}  </script>
+{%- endmacro %}
+{% macro body_script(x) -%}
+<script>
+{% include "body_script.html" %}  </script>
+{%- endmacro %}
+{% macro code_line(command) -%}
+<div class="code-line"><button class="copy" data-copy="{{ command }}">copy</button><code>{{ command }}</code></div>
+{%- endmacro %}
+{% macro install_rows(rows) -%}
+{% for row in rows %}<p class="muted mono">{{ row.label }}</p>{{ self::code_line(command=row.command) }}{% endfor %}
+{%- endmacro %}

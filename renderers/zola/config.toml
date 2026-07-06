@@ -1,0 +1,13 @@
+base_url = "https://averagechris.srht.site"
+compile_sass = false
+build_search_index = false
+generate_feeds = false
+generate_sitemap = false
+minify_html = false
+
+[markdown]
+smart_punctuation = false
+
+[slugify]
+paths = "safe"
+anchors = "safe"

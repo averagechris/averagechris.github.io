@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% import "macros.html" as ui %}
+{% block content %}
+{% if page.extra.kind == "content" %}
+  <main class="content">
+    <h1>{{ page.title | split(pat=" · ") | first }}</h1>
+{{ page.content | safe }}
+  </main>
+{% elif page.extra.kind == "notes_index" %}
+  <main class="content">
+    <h1>Notes</h1>
+    <ul class="more-projects">
+{% for note in data.notes %}    <li><span class="muted mono">{{ note.date }}</span> — <a href="/notes/{{ note.slug }}/">{{ note.title }}</a></li>
+{% endfor %}    </ul>
+  </main>
+{% elif page.extra.kind == "note" %}{% set note = data.notes | filter(attribute="slug", value=page.extra.slug) | first %}
+  <main class="content">
+    <h1>{{ note.title }}</h1>
+    <p class="muted mono">{{ note.date }}</p>
+{{ page.content | safe }}
+  </main>
+{% elif page.extra.kind == "tools" %}
+  <main class="content">
+    <h1>Tools</h1>
+    <p>One page with every tool I distribute. See <a href="{% if data.has_keys %}/keys/{% else %}https://meta.sr.ht/~averagechris.pgp{% endif %}">verification details</a>.</p>
+{% for project in data.projects %}{% if project.in_tools %}    <article class="tool" id="{{ project.path }}">
+      <h2><a href="#{{ project.path }}">{{ project.name }}</a> {% if project.version %}<span class="version">{{ project.version }}</span>{% endif %}{% if project.date %} <span class="muted mono">{{ project.date }}</span>{% endif %}</h2>
+      <p>{{ project.description }}</p>
+      <p class="project-links"><a class="primary-link" href="/{{ project.path }}/">downloads page</a> {% for link in project.info_links_relative %}<a href="{{ link.url }}">{{ link.label }}</a> {% endfor %}<a href="{{ project.repo }}">source</a></p>
+      <h3>install</h3>
+{{ ui::install_rows(rows=project.tools_rows) }}
+      <h3>verified install</h3>
+{{ ui::install_rows(rows=project.verified_rows) }}
+    </article>{% endif %}{% endfor %}
+  </main>
+{% elif page.extra.kind == "download" %}{% set item = data.downloads | filter(attribute="path", value=page.extra.path) | first %}
+  <main class="content"><div class="masthead"><div><h1>{{ item.project.name }} downloads</h1><p class="home-link"><a href="/">~averagechris</a> / {{ item.project.pages_subdir }}</p></div><button class="theme-toggle" id="theme-toggle" aria-label="toggle color theme">dawn &frasl; moon</button></div>
+    <p>{{ item.project.description }}</p><p class="page-links">{% for link in item.page_links %}<a class="page-link" href="{{ link.url }}">{{ link.label }}</a>{% endfor %}</p><p><a href="https://git.sr.ht/~averagechris/{{ item.project.srht_repo }}">Source repository</a></p>
+    <h2>What's new in {{ item.info.tag }}</h2>{{ item.whats_new | markdown | safe }}{% for prev in item.previous %}<details><summary>{{ prev.tag }}</summary>{{ prev.body | markdown | safe }}</details>{% endfor %}<h2>Binary downloads</h2>{% for release in item.releases %}<section class="release{% if release.latest %} latest{% endif %}"><div class="release-heading"><div><p class="eyebrow">{% if release.latest %}Latest release{% else %}Release{% endif %}</p><h3>{{ release.tag }}</h3></div><span class="build-count">{{ release.artifacts | length }} builds</span></div><div class="build-grid">{% for a in release.artifacts %}
+          <article class="build"><h4>{{ a.label }}</h4><p class="filename"><code>{{ a.name }}</code></p>
+          <p class="download-links"><a class="primary-link" href="{{ a.download_rel }}">Download tarball</a><a href="{{ a.checksum_rel }}">Checksum</a></p>
+          <details><summary>SHA-256</summary><pre><code>{{ a.sha256 }}  {{ a.name }}</code></pre></details></article>{% endfor %}</div></section>{% endfor %}<h2>Manual install</h2><pre><code>{{ item.install }}</code></pre></main>
+{% elif page.extra.kind == "404" %}
+  <main class="content">
+    <h1>404</h1>
+    <p>nothing grows here</p>
+    <p><a href="/">home</a> · <a href="/tools/">tools</a></p>
+  </main>
+{% endif %}
+{% endblock content %}
