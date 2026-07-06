@@ -75,6 +75,10 @@ production domain at `/labs/wasm-test/` and verified with browser automation:
 
 ## Canonical data model milestone
 
+**Status: DONE (2026-07-05).** Canonical `site-data/` + checked loader
+(`scripts/site_data.py --check`) landed; Python builder output verified
+byte-identical during migration.
+
 Tasks:
 
 - Define the renderer-agnostic site data directories and file naming rules.
@@ -123,6 +127,11 @@ Requirements:
 
 ## Zola renderer milestone
 
+**Status: DONE (2026-07-05) — Zola is the production renderer.** Full
+structural parity proven with `scripts/compare_site_trees.py` plus a
+pixel-identical homepage screenshot; Python renderer kept as rollback via
+`--renderer python` until retirement.
+
 Tasks:
 
 - Add Zola to the Nix build environment.
@@ -145,6 +154,10 @@ Requirements:
   renderer-owned files.
 
 ## Leptos islands milestone
+
+**Status: NOT STARTED — fully de-risked.** Live-Pages WASM viability is
+proven (see "Verified live constraints"); the spike crate at
+`spike/wasm-pages-test/` is the seed for the island pipeline.
 
 Tasks:
 
@@ -173,6 +186,9 @@ Requirements:
 
 ## Progressive navigation milestone
 
+**Status: NOT STARTED.** Blocked on islands pipeline by choice, not
+necessity.
+
 Tasks:
 
 - Add stable page regions to templates, e.g. persistent chrome plus a
@@ -196,6 +212,9 @@ Requirements:
   core content.
 
 ## Pages-alike local QA milestone
+
+**Status: DONE (2026-07-05).** `nix run .#serve` emulates live Pages
+headers/MIME/404; `.builds/qa-pages.yml` removed.
 
 SourceHut refuses non-`averagechris.srht.site` domains for this account, so
 staging-domain publishing is struck from the plan. Refactor QA happens locally
@@ -231,6 +250,11 @@ Requirements:
   same change that adapts the site to them.
 
 ## Validation milestone
+
+**Status: ONGOING GATE.** Harness (`scripts/compare_site_trees.py`) and
+pages-alike QA are in place and gated the Zola cutover; re-run for every
+renderer-affecting change. Island/progressive-nav items pending those
+milestones.
 
 Tasks:
 

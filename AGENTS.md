@@ -132,6 +132,27 @@ If main moved since the workspace was created, `jj rebase -s <change-id> -d main
 - Fleet project pages are rendered here from git.sr.ht tags, tag artifacts, and docs fetched from pinned main SHAs.
 - Per-repo `build-pages`/`publish-pages` apps may still exist during migration, but this repo is the sole Pages publisher.
 
+### Site rendering (post-Zola cutover, 2026-07-05)
+
+- **Zola is the production renderer** (`renderers/zola/` templates +
+  `scripts/materialize_zola.py`), materialized from canonical `site-data/`
+  plus `generated/fleet.json`. The legacy Python renderer is rollback-only:
+  `nix run .#build-pages -- --renderer python`. Templates are renderer-owned;
+  content/metadata truth lives in `site-data/` (validated by
+  `python3 scripts/site_data.py --check`).
+- Any change that can affect rendered output MUST be gated with
+  `python3 scripts/compare_site_trees.py OLD_TREE NEW_TREE --ignore-volatile`
+  (structural parity harness; see docs/architecture.md).
+- `nix run .#serve` is a **pages-alike** server: real SourceHut Pages CSP
+  header, correct MIME types (incl. `application/wasm`), real-404 rendering.
+  Internal links are root-relative, so local click-through just works.
+- Leptos WASM islands are **verified viable on live Pages** (correct
+  `application/wasm` MIME, CSP permits instantiation, same-origin fetch OK) —
+  see "Verified live constraints" in docs/site-rendering-plan.md and the spike
+  crate at `spike/wasm-pages-test/`. Milestone status lives in that plan doc.
+- sr.ht only allows publishing to `averagechris.srht.site` for this account;
+  there is no staging domain. QA is local via the pages-alike server.
+
 ### Recipe: distill TIL notes
 
 Run `nix run .#note -- distill`, then inspect each generated session stub with
