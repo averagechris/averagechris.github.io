@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
+import hashlib
 import html
 import json
 import os
@@ -318,13 +319,35 @@ def artifact_cache_path(repo: pathlib.Path, name: str) -> pathlib.Path:
     return repo / ".cache" / "artifacts" / safe
 
 
-def download_artifact(repo: pathlib.Path, url: str, name: str, dest: pathlib.Path, *, soft: bool = False) -> bool:
+def download_artifact(repo: pathlib.Path, url: str, name: str, dest: pathlib.Path, *, soft: bool = False, sha256: str | None = None) -> bool:
+    """Copy a release artifact into place, verifying integrity against its sha256.
+
+    A soft-failed fetch or a truncated/corrupt cache entry must never publish a
+    bad tarball next to a valid .sha256 (seen once as a zero-byte artifact in a
+    build output). Invalid cache entries are discarded and refetched.
+    """
+    def valid(data: bytes) -> bool:
+        if not data:
+            return False
+        if sha256 is not None:
+            return hashlib.sha256(data).hexdigest() == sha256
+        return True
+
     cache = artifact_cache_path(repo, name)
     cache.parent.mkdir(parents=True, exist_ok=True)
+    if cache.exists() and not valid(cache.read_bytes()):
+        print(f"  warn: discarding invalid cached artifact {name}")
+        cache.unlink()
     if not cache.exists():
         data = fetch(url, soft=soft)
         if data is None:
             return False
+        if not valid(data):
+            message = f"artifact {name} from {url} is empty or fails sha256 verification"
+            if soft:
+                print(f"  warn: {message}; skipping")
+                return False
+            fail(message)
         cache.write_bytes(data)
     dest.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(cache, dest)
@@ -401,8 +424,9 @@ def acquire_fleet_data(repo: pathlib.Path, config: dict, site_dir: pathlib.Path,
                 sha = sha_data.decode().split()[0]
                 hosted = versions.index(v) < 3
                 if hosted:
-                    download_artifact(repo, url, name, project_dir / "downloads" / name, soft=True)
-                    (project_dir / "downloads" / f"{name}.sha256").write_bytes(sha_data)
+                    ok = download_artifact(repo, url, name, project_dir / "downloads" / name, soft=True, sha256=sha)
+                    if ok:
+                        (project_dir / "downloads" / f"{name}.sha256").write_bytes(sha_data)
                 artifacts.append({"name": name, "version": v, "platform": platform, "label": platform_label(platform), "url": (f"{base_url}/{p['path']}/downloads/{name}" if hosted else url), "sha_url": (f"{base_url}/{p['path']}/downloads/{name}.sha256" if hosted else sha_url), "sha256": sha, "hosted": hosted})
         info = {"project": f, "tag": tag, "tag_sha": tags[tag], "main_sha": main_sha, "versions": versions, "docs": sorted(docs), "changelog": parse_changelog(changelog_text), "artifacts": artifacts}
         manifest = {"version": tag, "artifacts": [{"name": a["name"], "url": a["url"], "sha256": a["sha256"]} for a in artifacts]}
