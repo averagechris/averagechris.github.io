@@ -90,3 +90,12 @@ repo = "https://git.sr.ht/~averagechris/workctl"
 downloads = true
 tier = "featured"
 extra_links = []
+
+[[projects]]
+path = "sideshow"
+name = "sideshow"
+description = "Agentic HTML slide deck compiler and toolkit. One self-contained HTML file per deck."
+repo = "https://git.sr.ht/~averagechris/sideshow"
+downloads = true
+tier = "featured"
+extra_links = []

@@ -159,3 +159,17 @@ quirks = [
   "standard apps come from presets.rust (old CC/CXX-pinning ci wrappers dropped; preset's stdenv.cc suffices with sccache)",
   "byte-reproducible release tarballs are documented behavior — preserve",
 ]
+
+[[repos]]
+name = "sideshow"
+local = "/Users/chris/projects/sideshow"
+pages_subdir = "sideshow"
+version_file = "Cargo.toml"
+artifact_prefix = "sideshow"
+srht_repo = "sideshow"
+binaries = ["sideshow"]
+quirks = [
+  "tailwindcss (standalone, no node) must be on PATH at runtime for `build` — provided by the dev shell; package wrapper is a tracked follow-up",
+  "integration tests that invoke tailwind are gated on `which tailwindcss` and skip outside the dev shell",
+  "skills/ dir ships the sideshow-deck-author agent skill — keep in sync with CLI changes",
+]
