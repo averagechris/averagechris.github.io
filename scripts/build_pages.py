@@ -365,11 +365,12 @@ def render_download_page(site: dict, project: dict, base_url: str, info: dict) -
     return page_chrome(f"{project['name']} downloads", project.get("description", ""), f"{base_url}/{project['pages_subdir']}/", site, body)
 
 
-def build_fleet_projects(repo: pathlib.Path, config: dict, site_dir: pathlib.Path, base_url: str) -> tuple[dict[str, bool], dict[str, dict], dict[str, set[str]], dict]:
+def acquire_fleet_data(repo: pathlib.Path, config: dict, site_dir: pathlib.Path, base_url: str) -> dict:
     fleet = load_fleet(repo)
     published: dict[str, bool] = {}
     meta: dict[str, dict] = {}
     pages: dict[str, set[str]] = {}
+    fleet_projects: dict[str, dict] = {}
     state = {"generated_at": dt.datetime.now(dt.UTC).isoformat(), "trigger": {"source": os.environ.get("TRIGGER_SOURCE", "manual"), "project": os.environ.get("TRIGGER_PROJECT", ""), "tag": os.environ.get("TRIGGER_TAG", ""), "sha": os.environ.get("TRIGGER_SHA", "")}, "projects": {}}
     for p in config["projects"]:
         if not p.get("downloads", True) or p["path"] not in fleet:
@@ -403,14 +404,48 @@ def build_fleet_projects(repo: pathlib.Path, config: dict, site_dir: pathlib.Pat
                     download_artifact(repo, url, name, project_dir / "downloads" / name, soft=True)
                     (project_dir / "downloads" / f"{name}.sha256").write_bytes(sha_data)
                 artifacts.append({"name": name, "version": v, "platform": platform, "label": platform_label(platform), "url": (f"{base_url}/{p['path']}/downloads/{name}" if hosted else url), "sha_url": (f"{base_url}/{p['path']}/downloads/{name}.sha256" if hosted else sha_url), "sha256": sha, "hosted": hosted})
-        info = {"tag": tag, "tag_sha": tags[tag], "main_sha": main_sha, "versions": versions, "docs": sorted(docs), "changelog": parse_changelog(changelog_text), "artifacts": artifacts}
+        info = {"project": f, "tag": tag, "tag_sha": tags[tag], "main_sha": main_sha, "versions": versions, "docs": sorted(docs), "changelog": parse_changelog(changelog_text), "artifacts": artifacts}
         manifest = {"version": tag, "artifacts": [{"name": a["name"], "url": a["url"], "sha256": a["sha256"]} for a in artifacts]}
         (project_dir / "manifest.json").write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n")
-        (project_dir / "index.html").write_text(render_download_page(config["site"], f, base_url, info))
         published[p["path"]] = True; pages[p["path"]] = docs
         meta[p["path"]] = parse_manifest(manifest) or {"version": tag, "artifacts": [], "platforms": []}
         state["projects"][p["path"]] = {"tag": tag, "tag_sha": tags[tag], "main_sha": main_sha, "docs": sorted(docs), "hosted_versions": versions[:3], "artifacts": artifacts}
-    return published, meta, pages, state
+        info.update({"hosted_versions": versions[:3]})
+        fleet_projects[p["path"]] = info
+    return {"published": published, "meta": meta, "project_pages": {k: sorted(v) for k, v in pages.items()}, "projects": fleet_projects, "state": state, "release_dates": {}}
+
+
+def write_fleet_json(repo: pathlib.Path, fleet_json: dict) -> pathlib.Path:
+    generated_dir = repo / "generated"
+    generated_dir.mkdir(parents=True, exist_ok=True)
+    path = generated_dir / "fleet.json"
+    path.write_text(json.dumps(fleet_json, indent=2, sort_keys=True) + "\n")
+    return path
+
+
+def load_fleet_json(path: pathlib.Path) -> dict:
+    return json.loads(path.read_text())
+
+
+def render_fleet_download_pages(config: dict, site_dir: pathlib.Path, base_url: str, fleet_json: dict) -> None:
+    for project in config["projects"]:
+        path = project["path"]
+        info = fleet_json.get("projects", {}).get(path)
+        if not info:
+            continue
+        f = info["project"]
+        project_dir = site_dir / path
+        project_dir.mkdir(parents=True, exist_ok=True)
+        (project_dir / "index.html").write_text(render_download_page(config["site"], f, base_url, info))
+
+
+def fleet_render_inputs(fleet_json: dict) -> tuple[dict[str, bool], dict[str, dict], dict[str, set[str]], dict[str, str]]:
+    return (
+        dict(fleet_json.get("published", {})),
+        dict(fleet_json.get("meta", {})),
+        {k: set(v) for k, v in fleet_json.get("project_pages", {}).items()},
+        dict(fleet_json.get("release_dates", {})),
+    )
 
 
 def project_info_links(base_url: str, project: dict, pages: dict[str, set[str]]) -> list[str]:
@@ -923,11 +958,58 @@ def render_tools(
   </main>"""
     return page_chrome("Tools · ~averagechris", site_description(site), base_url + "/tools/", site, body)
 
+
+def render_python_site(repo: pathlib.Path, config: dict, site_dir: pathlib.Path, base_url: str, fleet_json: dict) -> tuple[set[str], list[dict[str, object]]]:
+    site = config["site"]
+    published, meta, project_pages, dates = fleet_render_inputs(fleet_json)
+    render_fleet_download_pages(config, site_dir, base_url, fleet_json)
+    slugs = render_content_pages(repo, site_dir, site, base_url)
+    notes = render_notes(repo, site_dir, site, base_url)
+    (site_dir / "index.html").write_text(
+        render_index(repo, config, base_url, published, meta, project_pages, dates, notes)
+    )
+    tools_dir = site_dir / "tools"
+    tools_dir.mkdir(parents=True, exist_ok=True)
+    (tools_dir / "index.html").write_text(
+        render_tools(config, site, base_url, meta, project_pages, dates, "keys" in slugs)
+    )
+    not_found_body = """  <main class="content">
+    <h1>404</h1>
+    <p>nothing grows here</p>
+    <p><a href="/">home</a> · <a href="/tools/">tools</a></p>
+  </main>"""
+    (site_dir / "404.html").write_text(
+        page_chrome("404 · ~averagechris", "nothing grows here", base_url + "/404.html", site, not_found_body)
+    )
+    return slugs, notes
+
+
+def assemble_site(repo: pathlib.Path, out_dir: pathlib.Path, site_dir: pathlib.Path, state: dict) -> None:
+    (site_dir / "state.json").write_text(json.dumps(state, indent=2, sort_keys=True) + "\n")
+    assets_dir = repo / "assets"
+    if assets_dir.is_dir():
+        for asset in sorted(assets_dir.iterdir()):
+            if asset.is_file():
+                shutil.copy2(asset, site_dir / asset.name)
+    out_dir.mkdir(exist_ok=True)
+    (out_dir / "siteconfig.json").write_text(json.dumps({"notFound": "404.html"}) + "\n")
+    tarball = out_dir / "pages.tar.gz"
+    with tarfile.open(tarball, "w:gz") as archive:
+        for path in sorted(site_dir.rglob("*")):
+            if path.is_file():
+                archive.add(path, arcname=str(path.relative_to(site_dir)))
+    (out_dir / "PREVIEW_ONLY").unlink(missing_ok=True)
+    print(f"site: {site_dir}")
+    print(f"tarball: {tarball}")
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--domain", default=None)
     parser.add_argument("--out", default="dist")
+    parser.add_argument("--renderer", choices=("python", "zola"), default="python")
     args = parser.parse_args()
+    if args.renderer == "zola":
+        fail("renderer 'zola' is not implemented yet; use --renderer python")
 
     repo = pathlib.Path(__file__).resolve().parent.parent
     loaded = load_site_data(repo)
@@ -944,56 +1026,12 @@ def main() -> None:
     site_dir.mkdir(parents=True)
 
     print("building fleet project pages from sr.ht tags and repo files")
-    published, meta, project_pages, state = build_fleet_projects(repo, config, site_dir, base_url)
-    dates = update_release_dates(repo, meta)
-
-    slugs = render_content_pages(repo, site_dir, site, base_url)
-    notes = render_notes(repo, site_dir, site, base_url)
-    (site_dir / "index.html").write_text(
-        render_index(repo, config, base_url, published, meta, project_pages, dates, notes)
-    )
-
-    tools_dir = site_dir / "tools"
-    tools_dir.mkdir(parents=True, exist_ok=True)
-    (tools_dir / "index.html").write_text(
-        render_tools(config, site, base_url, meta, project_pages, dates, "keys" in slugs)
-    )
-    (site_dir / "state.json").write_text(json.dumps(state, indent=2, sort_keys=True) + "\n")
-
-    not_found_body = """  <main class="content">
-    <h1>404</h1>
-    <p>nothing grows here</p>
-    <p><a href="/">home</a> · <a href="/tools/">tools</a></p>
-  </main>"""
-    (site_dir / "404.html").write_text(
-        page_chrome(
-            "404 · ~averagechris",
-            "nothing grows here",
-            base_url + "/404.html",
-            site,
-            not_found_body,
-        )
-    )
-
-    assets_dir = repo / "assets"
-    if assets_dir.is_dir():
-        for asset in sorted(assets_dir.iterdir()):
-            if asset.is_file():
-                shutil.copy2(asset, site_dir / asset.name)
-
-    out_dir.mkdir(exist_ok=True)
-    (out_dir / "siteconfig.json").write_text(json.dumps({"notFound": "404.html"}) + "\n")
-
-    tarball = out_dir / "pages.tar.gz"
-    with tarfile.open(tarball, "w:gz") as archive:
-        for path in sorted(site_dir.rglob("*")):
-            if path.is_file():
-                archive.add(path, arcname=str(path.relative_to(site_dir)))
-
-    (out_dir / "PREVIEW_ONLY").unlink(missing_ok=True)
-
-    print(f"site: {site_dir}")
-    print(f"tarball: {tarball}")
+    fleet_json = acquire_fleet_data(repo, config, site_dir, base_url)
+    fleet_json["release_dates"] = update_release_dates(repo, fleet_json["meta"])
+    fleet_json_path = write_fleet_json(repo, fleet_json)
+    fleet_json = load_fleet_json(fleet_json_path)
+    render_python_site(repo, config, site_dir, base_url, fleet_json)
+    assemble_site(repo, out_dir, site_dir, fleet_json["state"])
 
 
 if __name__ == "__main__":
