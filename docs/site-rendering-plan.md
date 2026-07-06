@@ -45,8 +45,33 @@ content; renderers are adapters that can be replaced.
   fetch the target HTML, replace the main content region, update title/history,
   and keep persistent chrome in place. It must fall back to normal navigation
   and must not block first paint.
-- Publish QA builds to `averagechris-qa.srht.site` for refactor validation until
-  a custom staging domain is configured.
+- QA is local-first: validate refactor builds with a local dev server that
+  emulates SourceHut Pages as closely as possible (headers, MIME types, 404
+  behavior). SourceHut only allows publishing to `averagechris.srht.site` for
+  this account — a separate `*-qa.srht.site` staging subdomain is not possible,
+  so there is no staging publish step.
+
+## Verified live constraints (2026-07-05)
+
+A minimal Leptos CSR island (`spike/wasm-pages-test/`) was published under the
+production domain at `/labs/wasm-test/` and verified with browser automation:
+
+- `.wasm` is served with `Content-Type: application/wasm`, so
+  `WebAssembly.instantiateStreaming` works without a fallback path.
+- `.json` is served as `application/json`; same-origin `fetch()` works.
+- The island mounted, reactivity worked (click handlers), and the fetch
+  completed under the live CSP. Bundle size: ~210 KB wasm + ~34 KB JS glue.
+- The live `Content-Security-Policy` header (capture with
+  `curl -sI https://averagechris.srht.site/ | grep -i content-security-policy`):
+
+  ```text
+  default-src 'self' data: blob:; script-src 'self' 'unsafe-eval'
+  'unsafe-inline'; style-src 'self' 'unsafe-inline'; worker-src 'self'
+  'unsafe-eval' 'unsafe-inline' data: blob:; frame-src https:; img-src data:
+  https:; media-src https:; object-src 'none'; sandbox allow-downloads
+  allow-forms allow-modals allow-pointer-lock allow-popups allow-presentation
+  allow-same-origin allow-scripts;
+  ```
 
 ## Canonical data model milestone
 
@@ -170,27 +195,40 @@ Requirements:
   enhancer must be small, dependency-free or Rust/WASM only, and loaded after
   core content.
 
-## SourceHut Pages QA milestone
+## Pages-alike local QA milestone
+
+SourceHut refuses non-`averagechris.srht.site` domains for this account, so
+staging-domain publishing is struck from the plan. Refactor QA happens locally
+against a server that emulates SourceHut Pages.
 
 Tasks:
 
-- Publish production only from `refs/heads/main` via `.builds/pages.yml`.
-- Keep production refresh publishing branch-gated to `refs/heads/main` for the
+- Publish production only from `refs/heads/main` via `.builds/pages.yml`, and
+  keep production refresh publishing branch-gated to `refs/heads/main` for the
   git.sr.ht integration via `.builds/refresh-pages.yml`; manual/scheduler
   submissions can still use the refresh manifest.
-- Add `.builds/qa-pages.yml` to publish `averagechris-qa.srht.site` from
-  `refs/heads/qa`, `refs/heads/site-refactor`, or
-  `refs/heads/site-rendering-refactor`.
-- Build QA with `nix run .#build-pages -- --domain averagechris-qa.srht.site`
-  so absolute links and metadata point at the QA domain.
+- Upgrade `nix run .#serve` into a pages-alike server (stdlib Python; no new
+  runtime dependencies) that serves `dist/site` with:
+  - the captured live `Content-Security-Policy` header (see "Verified live
+    constraints") sent verbatim on every response;
+  - SourceHut-matching MIME types, including `application/wasm` and
+    `application/json`;
+  - `404` responses that render the `siteconfig.json` `notFound` page with a
+    real 404 status;
+  - no directory listings.
+- Keep the emulated header set in one obvious place with a comment recording
+  the capture date and the one-line `curl` re-capture command, so drift from
+  live Pages is cheap to re-check.
 
 Requirements:
 
-- Refactor branches cannot accidentally publish the production domain via the
-  git.sr.ht build integration.
-- QA publishes use the same static artifact shape as production.
-- The QA domain is temporary and can be replaced by a custom staging domain by
-  changing one manifest environment variable.
+- Refactor branches cannot publish any domain via the git.sr.ht build
+  integration; only `refs/heads/main` publishes.
+- Everything the Validation milestone needs (no-JS pages, islands, JSON
+  fetches, progressive navigation) must be exercisable against the local
+  pages-alike server before any production cutover.
+- If live Pages headers change, the emulated header constant is updated in the
+  same change that adapts the site to them.
 
 ## Validation milestone
 
@@ -198,19 +236,23 @@ Tasks:
 
 - Compare old and new rendered URL inventories before switching production.
 - Check core pages in a no-JS browser mode.
-- Check at least one Leptos island on the QA domain after SourceHut Pages
-  publishes it, including JS/WASM loading under the Pages CSP.
+- Check at least one Leptos island against the pages-alike local server,
+  including JS/WASM loading under the emulated CSP; re-verify on production
+  right after the first island publish. (The wasm spike already passed this
+  live on 2026-07-05.)
 - Verify release/download URLs and SHA files for every fleet project.
 - Verify `state.json` fingerprints and refresh skip behavior.
-- Capture the live QA `Content-Security-Policy` header and confirm every chosen
-  asset-loading pattern is permitted by that header, including Zola CSS/JS,
-  Leptos JS/WASM, static JSON fetches, and the progressive navigation fetch.
+- Re-capture the live production `Content-Security-Policy` header before
+  cutover and confirm every chosen asset-loading pattern is permitted by it,
+  including Zola CSS/JS, Leptos JS/WASM, static JSON fetches, and the
+  progressive navigation fetch; confirm the pages-alike server still matches
+  the live header.
 - Keep `nix run .#build-pages`, `nix run .#serve`, and `nix run .#publish-pages`
   stable for callers throughout the refactor.
 
 Requirements:
 
-- Production cutover only happens after QA has equivalent static coverage for
-  existing pages and downloads.
+- Production cutover only happens after local pages-alike QA has equivalent
+  static coverage for existing pages and downloads.
 - Any URL changes are deliberate and documented.
 - Performance regressions are treated as refactor blockers, not follow-up polish.
