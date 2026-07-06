@@ -448,10 +448,14 @@ def fleet_render_inputs(fleet_json: dict) -> tuple[dict[str, bool], dict[str, di
     )
 
 
-def project_info_links(base_url: str, project: dict, pages: dict[str, set[str]]) -> list[str]:
+def site_path(path: str) -> str:
+    return "/" + path.lstrip("/")
+
+
+def project_info_links(project: dict, pages: dict[str, set[str]]) -> list[str]:
     path = project["path"]
     return [
-        f'<a href="{esc(base_url + "/" + path + "/" + page)}">{esc(page.removesuffix(".html"))}</a>'
+        f'<a href="/{esc(path)}/{esc(page)}">{esc(page.removesuffix(".html"))}</a>'
         for page in PROJECT_INFO_PAGES
         if page in pages.get(path, set())
     ]
@@ -731,8 +735,8 @@ def render_index(
         if project.get("tier", "featured") == "more":
             more_links = []
             if has_downloads:
-                more_links.append(f'<a href="{esc(base_url + "/" + project["path"] + "/")}">downloads</a>')
-                more_links.extend(project_info_links(base_url, project, project_pages))
+                more_links.append(f'<a href="/{esc(project["path"])}/">downloads</a>')
+                more_links.extend(project_info_links(project, project_pages))
             more_links.extend(
                 f'<a href="{esc(link["url"])}">{esc(link["label"])}</a>'
                 for link in project.get("extra_links", [])
@@ -748,9 +752,9 @@ def render_index(
             if published.get(project["path"]) is False:
                 links.append('<span class="pending">no release yet</span>')
             else:
-                downloads_url = esc(base_url + "/" + project["path"] + "/")
+                downloads_url = f'/{esc(project["path"])}/'
                 links.append(f'<a class="primary-link" href="{downloads_url}">downloads</a>')
-                links.extend(project_info_links(base_url, project, project_pages))
+                links.extend(project_info_links(project, project_pages))
         for link in project.get("extra_links", []):
             links.append(f'<a href="{esc(link["url"])}">{esc(link["label"])}</a>')
         links.append(f'<a href="{repo_url}">source</a>')
@@ -810,7 +814,7 @@ def render_index(
     portrait = ""
     if site.get("portrait"):
         portrait = (
-            f'\n      <img class="portrait" src="{esc(site["portrait"])}" '
+            f'\n      <img class="portrait" src="{esc(site_path(site["portrait"]))}" '
             f'alt="{esc(site["name"])}" width="88" height="88">'
         )
     body = f"""  <header>
@@ -940,7 +944,7 @@ def render_tools(
         date_html = f' <span class="muted mono">{esc(date_text)}</span>' if date_text else ""
         project_meta = meta[project["path"]]
         links = [f'<a class="primary-link" href="/{esc(project["path"])}/">downloads page</a>']
-        links.extend(project_info_links("", project, project_pages))
+        links.extend(project_info_links(project, project_pages))
         links.append(f'<a href="{esc(project["repo"])}">source</a>')
         entries.append(f"""    <article class="tool" id="{esc(project["path"])}">
       <h2><a href="#{esc(project["path"])}">{esc(project["name"])}</a> {badge}{date_html}</h2>

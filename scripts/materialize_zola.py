@@ -59,10 +59,14 @@ def version_bits(path: str, meta: dict[str, dict], dates: dict[str, str]) -> dic
     }
 
 
-def info_links(project: dict, project_pages: dict[str, list[str]], *, absolute_base: str = "") -> list[dict]:
+def site_path(path: str) -> str:
+    return "/" + path.lstrip("/")
+
+
+def info_links(project: dict, project_pages: dict[str, list[str]]) -> list[dict]:
     path = project["path"]
     return [
-        {"label": page.removesuffix(".html"), "url": f"{absolute_base}/{path}/{page}" if absolute_base else f"/{path}/{page}"}
+        {"label": page.removesuffix(".html"), "url": f"/{path}/{page}"}
         for page in DOC_PAGES
         if page in set(project_pages.get(path, []))
     ]
@@ -71,6 +75,8 @@ def info_links(project: dict, project_pages: dict[str, list[str]], *, absolute_b
 def build_template_data(config: dict, base_url: str, fleet_json: dict) -> dict:
     site = {k: v for k, v in config["site"].items() if k != "_config"}
     site["description"] = site_description(site)
+    if site.get("portrait"):
+        site["portrait_url"] = site_path(site["portrait"])
     site["about_paragraphs"] = [p.strip() for p in site.get("about", "").split("\n\n") if p.strip()]
 
     published = dict(fleet_json.get("published", {}))
@@ -96,8 +102,8 @@ def build_template_data(config: dict, base_url: str, fleet_json: dict) -> dict:
             {
                 "has_downloads": has_downloads,
                 "published": published.get(path),
-                "downloads_url": f"{base_url}/{path}/",
-                "info_links_home": info_links(project, project_pages, absolute_base=base_url),
+                "downloads_url": f"/{path}/",
+                "info_links_home": info_links(project, project_pages),
                 "info_links_relative": info_links(project, project_pages),
                 "version": bits["version"],
                 "date": bits["date"],
