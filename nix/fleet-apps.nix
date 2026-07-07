@@ -15,9 +15,11 @@
     # for uploads/submits (see workctl's manifest for the reference shape).
     # Required oauth grants for the job (repo lookup needs git PROFILE:RO +
     # REPOSITORIES:RO; artifact upload needs OBJECTS:RW; submitting the
-    # site-refresh manifest needs JOBS:RW + SECRETS:RO):
+    # site-refresh manifest needs JOBS:RW + SECRETS:RO + builds PROFILE:RO,
+    # and the refresh publish needs pages PAGES:RW):
     #   git.sr.ht/OBJECTS:RW git.sr.ht/REPOSITORIES:RO git.sr.ht/PROFILE:RO
-    #   builds.sr.ht/JOBS:RW builds.sr.ht/SECRETS:RO meta.sr.ht/PROFILE:RO
+    #   builds.sr.ht/JOBS:RW builds.sr.ht/SECRETS:RO builds.sr.ht/PROFILE:RO
+    #   meta.sr.ht/PROFILE:RO pages.sr.ht/PAGES:RW
     # srht reads SRHT_TOKEN directly. sr.ht CI oauth grants export OAUTH2_TOKEN
     # and pre-provision ~/.config/hut/config (HCL: `access-token "..."`), so
     # generated manifests export SRHT_TOKEN from those before invoking srht.
@@ -95,6 +97,9 @@
           version="$(VERSION_FILE=${q versionFile} python3 -c 'import os,tomllib; data=tomllib.load(open(os.environ["VERSION_FILE"],"rb")); v=${versionExpr}; assert isinstance(v,str) and v; print(v)')"
           [[ "$version" =~ ^v?[0-9]+\.[0-9]+\.[0-9]+$ ]] || { printf 'version must be semver\n' >&2; exit 1; }
           tag="v''${version#v}"
+          # An empty jj working copy is never the release target; tag its
+          # parent instead (same semantics as `jj ship`).
+          if [[ -d .jj && "$revision" == "@" && "$(jj log -r @ --no-graph --color=never -T 'if(empty, "1", "0")')" == "1" ]]; then revision="@-"; fi
           if [[ -d .jj ]]; then commit="$(jj log -r "$revision" --no-graph --color=never -T 'commit_id')"; else commit="$(git rev-parse "$revision")"; fi
 
           remote_tag_ref="$(git ls-remote --tags origin "refs/tags/$tag" 2>/dev/null || true)"
@@ -189,7 +194,10 @@
           trap on_exit EXIT
           args=(); [[ -n "$version" ]] && args+=(--version "$version"); [[ $allow_downgrade -eq 1 ]] && args+=(--allow-downgrade); nix run .#prepare-release -- "''${args[@]}"; mutated=1
           version="$(VERSION_FILE=${q versionFile} python3 -c 'import os,tomllib; data=tomllib.load(open(os.environ["VERSION_FILE"],"rb")); print(${versionExpr})')"; tag="v''${version#v}"
-          if [[ -d .jj && -z "$(jj log -r @ --no-graph --color=never -T 'description.first_line()')" ]]; then jj describe -m "chore: release $tag"; fi
+          # An empty jj working copy is never the release target: aim at its
+          # parent (same semantics as `jj ship`) and never describe/tag it.
+          if [[ -d .jj && "$revision" == "@" && "$(jj log -r @ --no-graph --color=never -T 'if(empty, "1", "0")')" == "1" ]]; then revision="@-"; fi
+          if [[ -d .jj && "$revision" == "@" && -z "$(jj log -r @ --no-graph --color=never -T 'description.first_line()')" ]]; then jj describe -m "chore: release $tag"; fi
           if [[ -d .jj ]]; then commit="$(jj log -r "$revision" --no-graph --color=never -T 'commit_id')"; else commit="$(git rev-parse "$revision")"; fi
           if [[ $tag_release -eq 1 ]]; then nix run .#release-tag -- --revision "$commit"; if [[ -d .jj ]]; then jj bookmark set main --revision "$commit"; jj git push --remote origin --bookmark main; fi; fi
           if [[ $build_artifact -eq 1 ]]; then nix build .#release-artifact --out-link result-release-artifact; fi
