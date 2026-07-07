@@ -279,6 +279,13 @@ def cargo_toml(args: argparse.Namespace) -> str:
     serde = {{ version = "1", features = ["derive"] }}
     serde_json = "1"
     tokio = {{ version = "1", features = ["macros", "rt-multi-thread"] }}
+
+    [profile.release]
+    lto = "fat"
+    codegen-units = 1
+    strip = "symbols"
+    opt-level = "s"
+    panic = "abort"
     """
 
 
@@ -442,6 +449,8 @@ def release_manifest(args: argparse.Namespace) -> str:
     image: nixos/unstable
     arch: x86_64
     oauth: git.sr.ht/OBJECTS:RW git.sr.ht/REPOSITORIES:RO git.sr.ht/PROFILE:RO builds.sr.ht/JOBS:RW builds.sr.ht/SECRETS:RO builds.sr.ht/PROFILE:RO meta.sr.ht/PROFILE:RO pages.sr.ht/PAGES:RW
+    secrets:
+      - 731f7e55-4497-4228-8fa4-1657da7d3625 # cachix averagechris-dotfiles -> ~/.ci_secrets/cachix_token
     environment:
       GIT_CONFIG_COUNT: "1"
       GIT_CONFIG_KEY_0: http.userAgent
@@ -459,6 +468,15 @@ def release_manifest(args: argparse.Namespace) -> str:
           nix build .#release-artifact --out-link result-release-artifact
           mkdir -p ~/artifacts
           cp -p result-release-artifact/* ~/artifacts/
+      - cache-warm: |
+          set -eu
+          cd {args.srht_repo}
+          if [ ! -f ~/.ci_secrets/cachix_token ]; then echo "no cachix token available; skipping cache warm"; exit 0; fi
+          [ -e result-release-artifact ] || {{ echo "release-artifact result missing; skipping cache warm"; exit 0; }}
+          nix build .#default --out-link result-pkg --print-build-logs
+          [ -e result-pkg ] || {{ echo "package result missing; skipping cache warm"; exit 0; }}
+          CACHIX_AUTH_TOKEN="$(cat ~/.ci_secrets/cachix_token)"; export CACHIX_AUTH_TOKEN
+          nix run --inputs-from . nixpkgs#cachix -- push averagechris-dotfiles result-release-artifact result-pkg
       - upload-and-refresh: |
           set -eu
           cd {args.srht_repo}
@@ -513,6 +531,8 @@ def ci_manifest(args: argparse.Namespace) -> str:
     # Keep this manifest lean: no image packages are needed for the generated checks.
     # If packages are later required on nixos/unstable, use channel-prefixed names
     # (for example, nixos.git); unprefixed names fail before tasks start.
+    secrets:
+      - 731f7e55-4497-4228-8fa4-1657da7d3625 # cachix averagechris-dotfiles -> ~/.ci_secrets/cachix_token
     environment:
       NIX_CONFIG: |
         experimental-features = nix-command flakes
@@ -533,6 +553,16 @@ def ci_manifest(args: argparse.Namespace) -> str:
       - package: |
           cd {args.srht_repo}
           nix build .#{args.artifact_prefix} --print-build-logs
+      - closure-size: |
+          cd {args.srht_repo}
+          nix path-info -S ./result
+          nix path-info -rS ./result | sort -k2 -n | tail -n 5
+      - cache-warm: |
+          cd {args.srht_repo}
+          if [ ! -f ~/.ci_secrets/cachix_token ]; then echo "no cachix token available; skipping cache warm"; exit 0; fi
+          [ -e ./result ] || {{ echo "package result missing; skipping cache warm"; exit 0; }}
+          CACHIX_AUTH_TOKEN="$(cat ~/.ci_secrets/cachix_token)"; export CACHIX_AUTH_TOKEN
+          nix run --inputs-from . nixpkgs#cachix -- push averagechris-dotfiles ./result
     """
 
 
@@ -575,7 +605,7 @@ def agents_md(args: argparse.Namespace) -> str:
     - Enter the toolchain with `direnv allow` or `nix develop`.
     - Nix formatting uses wrapped `alejandra -q`; run `nix fmt` or `nix fmt -- --check .`.
     - Prefer local checks: `nix run .#static-checks` (fmt + clippy), `nix run .#ci-test`, `nix run .#ci-machete`, `nix run .#ci-sort`, `nix run .#ci-deny`, `nix run .#ci-audit`.
-    - `.builds/ci.yml` runs fmt, clippy, test, and the package build on every push.
+    - `.builds/ci.yml` runs fmt, clippy, test, the package build, closure-size reporting, and a guarded Cachix cache warm on every push.
 
     ## sccache
 
@@ -596,8 +626,9 @@ def agents_md(args: argparse.Namespace) -> str:
     nix run .#release -- --version X.Y.Z --submit-linux-build
     ```
 
-    `.builds/ci.yml` runs automatically on every push. `builds/release-linux-x86_64.yml`
-    is explicit-submit only; do not move it to `.builds/`.
+    `.builds/ci.yml` runs automatically on every push and warms the
+    averagechris-dotfiles Cachix cache when the CI secret is available.
+    `builds/release-linux-x86_64.yml` is explicit-submit only; do not move it to `.builds/`.
     """
 
 
