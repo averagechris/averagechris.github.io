@@ -28,11 +28,17 @@ Conventions: conventional commits; `CHANGELOG.md` with `## Unreleased`;
 annotated `vX.Y.Z` tags (required for sr.ht ref artifacts) with attached sr.ht
 artifacts; releases trigger this repo's `refresh-pages` build instead of per-repo
 Pages publishing; jj-first VCS; release manifest at `builds/release-linux-x86_64.yml`
-(runs only on explicit `hut builds submit` — never in `.builds/`);
+(runs only on explicit `srht builds submit --secrets` — never in `.builds/`);
 `.jj-lint.toml` includes at least fmt+clippy+test. Per-repo quirks are recorded
 in `fleet.toml` — read them before touching a repo.
-hut usage in the fleet release tooling is slated to be replaced by srht (the
-in-house CLI) now that it works — deferred to an upcoming session.
+Release tooling uses srht (the in-house CLI), migrated off hut fleet-wide on
+2026-07-06. Command mapping vs hut: artifact uploads take ONE file per
+`srht git artifact upload`; `--tags` is `--tag`; submits default to unlisted
+visibility. CI manifests get srht via
+`srht() { nix run 'git+https://git.sr.ht/~averagechris/srht' -- "$@"; }`
+(closure warmed in cachix; see todo #41 for the fleet-cache-warmer entry).
+Legacy per-repo `hut pages publish --subdirectory` apps are deprecated
+leftovers — leave them; this repo is the sole publisher.
 
 Check conformance: `nix run .#fleet-status` (add `--nix` to verify flake apps).
 Shared release helpers live under `lib.fleet.core`; Rust repos use
@@ -63,11 +69,20 @@ review and apply registry updates explicitly. Default homepage tier metadata is
 - The nixos/unstable build image has no system python3 or hut; the `build`
   user IS in trusted-users, so `NIX_CONFIG` `extra-substituters` in a
   manifest's environment works without extra ceremony.
+- sr.ht provisions a manifest's `oauth:` bearer token ONLY when the job is
+  submitted with secrets enabled, and `srht builds submit` defaults secrets
+  OFF for agent safety — every submit of an oauth-grant manifest MUST pass
+  `--secrets`, or the job silently runs with no token/hut config.
+- oauth-grant jobs export `OAUTH2_TOKEN` and provision `~/.config/hut/config`
+  in HCL form (`access-token "..."` — there is NO `oauth-token =` key). srht
+  reads `SRHT_TOKEN`; the standard manifest shim (verified via debug job
+  1813400) is:
+  `export SRHT_TOKEN="${SRHT_TOKEN:-${OAUTH2_TOKEN:-$(awk '/access-token/ { gsub(/"/, "", $2); print $2; exit }' ~/.config/hut/config 2>/dev/null || true)}}"`
 - On the nixos/unstable build image, `packages:` entries must be channel-prefixed
   (for example, `nixos.git`); unprefixed names fail during setup before any task
   runs. Avoid `packages:` entirely when Nix apps can provide the needed tools.
-- In manifests that need hut after `cd <repo>`, prefer
-  `nix shell --inputs-from . nixpkgs#hut --command hut ...` so Nix reuses the
+- In manifests that need extra tools after `cd <repo>`, prefer
+  `nix shell --inputs-from . nixpkgs#<tool> --command ...` so Nix reuses the
   repo's locked nixpkgs instead of downloading/evaluating a second registry
   unstable tarball.
 - CI pulls from the `averagechris-dotfiles` cachix cache: every new build
@@ -77,7 +92,8 @@ review and apply registry updates explicitly. Default homepage tier metadata is
   thorny's hourly `fleet-cache-warmer` still pushes each fleet repo's
   x86_64-linux `release-artifact` at main (see dotfiles docs/thorny.md).
 - Fetching raw CI logs (hut can't): token lives on suremac at
-  `~/Library/Application Support/hut/config`; then
+  `~/Library/Application Support/hut/config` (HCL:
+  `tok=$(awk -F '"' '/access-token/ {print $2; exit}' <config>)`); then
   `curl -H "Authorization: Bearer $tok" https://builds.sr.ht/query/log/<job>/<task>/log`.
   The public log URLs are behind a go-away bot wall.
 
@@ -97,9 +113,9 @@ safety rules:
   ```
   slack-rs quirk: `trunk()` can resolve to `main@upstream`; verify the parent
   is the local `main` bookmark.
-- NEVER: `jj git push`, `jj tag`, `hut pages publish`, `hut builds submit`,
-  or moving bookmarks. Subagents leave a described commit; the human reviews,
-  merges, and releases.
+- NEVER: `jj git push`, `jj tag`, `hut`/`srht` `pages publish` or
+  `builds submit`, or moving bookmarks. Subagents leave a described commit;
+  the human reviews, merges, and releases.
 - Pass along relevant quirks from `fleet.toml` and the repo's own AGENTS.md
   policies (e.g. linear-cli/slack-rs/ctx fork exclusions).
 - Host quirk: `RUSTC_WRAPPER=sccache` is set globally and MUST stay working
@@ -146,6 +162,11 @@ If main moved since the workspace was created, `jj rebase -s <change-id> -d main
 - Republish: push to this repo (CI does it) or `nix run .#build-pages && nix run .#publish-pages`
 - Fleet project pages are rendered here from git.sr.ht tags, tag artifacts, and docs fetched from pinned main SHAs.
 - Per-repo `build-pages`/`publish-pages` apps may still exist during migration, but this repo is the sole Pages publisher.
+- **Website apps (`build-pages`/`publish-pages`/`refresh-pages`/`serve`) are
+  excluded from `.#flake-output-cache`**, so their writeShellApplication
+  shellcheck gate only runs in CI — after editing one, force-build it locally
+  (e.g. `nix run .#publish-pages -- --help`) before pushing. ShellCheck 0.11
+  rejects `export VAR="$(...)"` (SC2155): assign, then `export VAR`.
 
 ### Site rendering (post-Zola cutover, 2026-07-05)
 
@@ -176,3 +197,5 @@ bullet facts that are TIL-worthy: plain, specific, and useful. Keep the
 `ctx show session` reference line, delete stubs that yielded nothing
 interesting, and leave the draft in `site-data/notes/_drafts/` for Chris to
 review and publish. Agents never publish notes.
+
+<!-- Last audited: 2026-07-06 | hut->srht migration recorded; CI oauth/--secrets + OAUTH2_TOKEN provisioning quirks; website-app shellcheck gap -->
