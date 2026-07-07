@@ -18,9 +18,9 @@
     # site-refresh manifest needs JOBS:RW + SECRETS:RO):
     #   git.sr.ht/OBJECTS:RW git.sr.ht/REPOSITORIES:RO git.sr.ht/PROFILE:RO
     #   builds.sr.ht/JOBS:RW builds.sr.ht/SECRETS:RO meta.sr.ht/PROFILE:RO
-    # srht reads SRHT_TOKEN directly. sr.ht CI oauth grants still pre-provision
-    # ~/.config/hut/config, so generated manifests export SRHT_TOKEN from that
-    # file before invoking srht.
+    # srht reads SRHT_TOKEN directly. sr.ht CI oauth grants export OAUTH2_TOKEN
+    # and pre-provision ~/.config/hut/config (HCL: `access-token "..."`), so
+    # generated manifests export SRHT_TOKEN from those before invoking srht.
     # IMPORTANT: sr.ht only provisions a manifest's `oauth:` bearer token when
     # the job is submitted with secrets ENABLED. srht defaults to secrets
     # disabled (agent safety), so every submit of an oauth-grant manifest here

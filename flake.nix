@@ -170,16 +170,16 @@
             if [[ -f dist/siteconfig.json ]]; then
               site_config_args=(--site-config-not-found 404.html)
             fi
-            if [[ -z "''${SRHT_TOKEN:-}" && -f "''${HOME:-}/.config/hut/config" ]]; then
-              SRHT_TOKEN="$(python3 - <<'PY'
-            from pathlib import Path
-            import re, os
-            config = Path(os.environ["HOME"]) / ".config" / "hut" / "config"
-            match = re.search(r'(?m)^oauth-token\s*=\s*"?([^"\s]+)', config.read_text())
-            print(match.group(1) if match else "")
-            PY
-              )"
-              export SRHT_TOKEN
+            # CI (builds.sr.ht oauth grant) exports OAUTH2_TOKEN and provisions
+            # ~/.config/hut/config with `access-token "..."` (HCL); srht reads
+            # SRHT_TOKEN. Locally, fall through to srht's own keyring auth.
+            if [[ -z "''${SRHT_TOKEN:-}" ]]; then
+              SRHT_TOKEN="''${OAUTH2_TOKEN:-}"
+              hut_config="''${HOME:-}/.config/hut/config"
+              if [[ -z "$SRHT_TOKEN" && -f "$hut_config" ]] && [[ "$(<"$hut_config")" =~ access-token[[:space:]]+\"([^\"]+)\" ]]; then
+                SRHT_TOKEN="''${BASH_REMATCH[1]}"
+              fi
+              if [[ -n "$SRHT_TOKEN" ]]; then export SRHT_TOKEN; fi
             fi
             exec srht pages publish "$tarball" --domain "$domain" "''${site_config_args[@]}"
           '';
