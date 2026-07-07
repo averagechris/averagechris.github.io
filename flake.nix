@@ -171,7 +171,7 @@
               site_config_args=(--site-config-not-found 404.html)
             fi
             if [[ -z "''${SRHT_TOKEN:-}" && -f "''${HOME:-}/.config/hut/config" ]]; then
-              export SRHT_TOKEN="$(python3 - <<'PY'
+              SRHT_TOKEN="$(python3 - <<'PY'
             from pathlib import Path
             import re, os
             config = Path(os.environ["HOME"]) / ".config" / "hut" / "config"
@@ -179,6 +179,7 @@
             print(match.group(1) if match else "")
             PY
               )"
+              export SRHT_TOKEN
             fi
             exec srht pages publish "$tarball" --domain "$domain" "''${site_config_args[@]}"
           '';
