@@ -10,7 +10,7 @@ import shutil
 import subprocess
 import tempfile
 
-DOC_PAGES = ("overview.html", "examples.html", "example.html", "demo.html", "changelog.html", "tour.html", "sample-review.html")
+from fleet_data import DOC_PAGES
 
 
 def site_description(site: dict) -> str:
