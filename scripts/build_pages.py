@@ -262,6 +262,16 @@ def load_fleet(repo: pathlib.Path) -> dict[str, dict]:
 
 
 def ls_remote(srht_repo: str) -> tuple[dict[str, str], str]:
+    refs_json = os.environ.get("FLEET_REFS_JSON")
+    if refs_json:
+        try:
+            entry = json.loads(pathlib.Path(refs_json).read_text()).get(srht_repo)
+        except Exception:
+            entry = None
+        if entry:
+            # refresh_pages hands off the refs from the build attempt's stable
+            # before fingerprint so this render skips duplicate ls-remote calls.
+            return dict(entry.get("tags", {})), entry.get("main_sha", "")
     # git's default UA gets tarpitted by sr.ht's anti-scraper defenses on
     # datacenter IPs just like python-urllib (observed as a silent 120s hang
     # in CI); send the same UA curl uses, and retry once since the tarpit

@@ -3,7 +3,7 @@
 
 from __future__ import annotations
 
-import argparse, json, os, pathlib, re, subprocess, sys, time, tomllib
+import argparse, concurrent.futures, json, os, pathlib, re, subprocess, sys, tempfile, time, tomllib
 
 SEMVER = re.compile(r"^v\d+\.\d+\.\d+$")
 
@@ -11,8 +11,8 @@ def run(cmd: list[str], **kw) -> subprocess.CompletedProcess:
     print("+", " ".join(cmd))
     return subprocess.run(cmd, check=True, text=True, **kw)
 
-def ls_refs(repo: str) -> tuple[list[str], str, str]:
-    """Return (all semver tags, latest tag, main sha) for a fleet repo."""
+def ls_refs(repo: str) -> tuple[list[str], str, str, dict[str, str]]:
+    """Return (all semver tags, latest tag, main sha, tag->sha) for a fleet repo."""
     # git's default UA gets tarpitted by sr.ht anti-scraper defenses on
     # datacenter IPs (silent multi-minute hang); use the curl UA and retry
     # once, with a hard timeout so the job fails loudly instead of hanging.
@@ -22,38 +22,48 @@ def ls_refs(repo: str) -> tuple[list[str], str, str]:
         out = subprocess.check_output(command, text=True, timeout=120)
     except (subprocess.TimeoutExpired, subprocess.CalledProcessError):
         out = subprocess.check_output(command, text=True, timeout=120)
-    tags, main = [], ""
+    tags, tag_shas, main = [], {}, ""
     for line in out.splitlines():
         sha, ref = line.split("\t", 1)
         if ref == "refs/heads/main": main = sha
         if ref.startswith("refs/tags/v") and not ref.endswith("^{}"):
             tag = ref.removeprefix("refs/tags/")
-            if SEMVER.match(tag): tags.append((tuple(map(int, tag[1:].split("."))), tag, sha))
+            if SEMVER.match(tag):
+                tags.append((tuple(map(int, tag[1:].split("."))), tag, sha)); tag_shas[tag] = sha
     tags.sort(reverse=True)
-    return ([t[1] for t in tags], tags[0][1] if tags else "", main)
-
-def ls(repo: str) -> tuple[str, str]:
-    _, latest, main = ls_refs(repo)
-    return (latest, main)
+    return ([t[1] for t in tags], tags[0][1] if tags else "", main, tag_shas)
 
 PLATFORMS = ("aarch64-darwin", "x86_64-darwin", "aarch64-linux", "x86_64-linux")
 USER_AGENT = "averagechris-fleet-pages (+https://averagechris.srht.site)"
 
 def probe(url: str) -> bool:
-    r = subprocess.run(
-        ["curl", "-sI", "-o", "/dev/null", "-w", "%{http_code}", "--max-time", "30",
-         "--retry", "1", "--user-agent", USER_AGENT, url],
-        stdout=subprocess.PIPE, text=True, timeout=120)
-    return r.stdout.strip() == "200"
+    # Tri-state: only 200/404 are stable fingerprint inputs. Tarpits, 5xx,
+    # empty codes, and curl failures retry once, then fail loudly rather than
+    # silently flipping an artifact between present/absent.
+    observed = []
+    for _ in range(2):
+        try:
+            r = subprocess.run(
+                ["curl", "-sI", "-o", "/dev/null", "-w", "%{http_code}", "--max-time", "30",
+                 "--retry", "1", "--user-agent", USER_AGENT, url],
+                stdout=subprocess.PIPE, text=True, timeout=120)
+            code = r.stdout.strip(); observed.append(code or f"curl exit {r.returncode}")
+        except subprocess.TimeoutExpired:
+            code = ""; observed.append("timeout")
+        if code == "200": return True
+        if code == "404": return False
+    raise SystemExit(f"unstable artifact probe for {url}: {', '.join(observed)}")
 
-def fingerprint(root: pathlib.Path) -> dict[str, dict]:
+def fingerprint(root: pathlib.Path) -> tuple[dict[str, dict], dict[str, dict]]:
     """Latest tag + main sha + which platform artifacts exist on the latest tag.
     Artifacts are part of the fingerprint so a late-arriving Linux build still
     triggers a republish of an already-published tag."""
+    repos = tomllib.loads((root / "fleet.toml").read_text())["repos"]
     out: dict[str, dict] = {}
-    for r in tomllib.loads((root / "fleet.toml").read_text())["repos"]:
+    refs: dict[str, dict] = {}
+    def one(r: dict) -> tuple[str, dict, str, dict]:
         repo = r.get("srht_repo", r["name"])
-        tag, main = ls(repo)
+        _, tag, main, tags = ls_refs(repo)
         artifacts = []
         if tag:
             prefix = r.get("artifact_prefix", r["name"])
@@ -61,8 +71,21 @@ def fingerprint(root: pathlib.Path) -> dict[str, dict]:
                 name = f"{prefix}-{tag}-{platform}.tar.gz"
                 if probe(f"https://git.sr.ht/~averagechris/{repo}/refs/download/{tag}/{name}"):
                     artifacts.append(name)
-        out[r["pages_subdir"]] = {"tag": tag, "main_sha": main, "artifacts": sorted(artifacts)}
-    return out
+        return r["pages_subdir"], {"tag": tag, "main_sha": main, "artifacts": sorted(artifacts)}, repo, {"tags": tags, "main_sha": main}
+    with concurrent.futures.ThreadPoolExecutor(max_workers=6) as ex:
+        futures = {ex.submit(one, r): r for r in repos}
+        results = {futures[f]["pages_subdir"]: f.result() for f in concurrent.futures.as_completed(futures)}
+    for r in repos:
+        page, fp, repo, ref = results[r["pages_subdir"]]
+        out[page] = fp; refs[repo] = ref
+    return out, refs
+
+def write_refs_json(root: pathlib.Path, refs: dict[str, dict]) -> pathlib.Path:
+    (root / "dist").mkdir(exist_ok=True)
+    with tempfile.NamedTemporaryFile("w", dir=root / "dist", prefix="fleet-refs-", suffix=".json", delete=False) as f:
+        path = pathlib.Path(f.name)
+    path.write_text(json.dumps(refs, sort_keys=True))
+    return path
 
 def live_state(domain: str) -> dict:
     r = subprocess.run(
@@ -104,14 +127,17 @@ def main() -> None:
     args = ap.parse_args()
     root = pathlib.Path(__file__).resolve().parent.parent
     wait_for_trigger(root)
-    current = fingerprint(root)
+    current, refs = fingerprint(root)
     if current == live_fingerprint(args.domain):
         print("fingerprint unchanged; no publish needed")
         return
+    before, before_refs = current, refs
     for attempt in range(1, 4):
-        before = fingerprint(root)
-        run([sys.executable, "scripts/build_pages.py", "--domain", args.domain], cwd=root)
-        after = fingerprint(root)
+        # Hand build_pages the exact refs captured by this attempt's before pass.
+        refs_path = write_refs_json(root, before_refs)
+        env = os.environ.copy(); env["FLEET_REFS_JSON"] = str(refs_path)
+        run([sys.executable, "scripts/build_pages.py", "--domain", args.domain], cwd=root, env=env)
+        after, after_refs = fingerprint(root)
         if before == after:
             if args.no_publish:
                 print("would publish dist/pages.tar.gz")
@@ -119,6 +145,7 @@ def main() -> None:
             run(["nix", "run", ".#publish-pages", "--", "--domain", args.domain], cwd=root)
             return
         print(f"fingerprint moved during build (attempt {attempt}); rebuilding")
+        before, before_refs = after, after_refs
     raise SystemExit("fingerprint kept moving after 3 builds")
 
 if __name__ == "__main__": main()
