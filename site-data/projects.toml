@@ -99,3 +99,12 @@ repo = "https://git.sr.ht/~averagechris/sideshow"
 downloads = true
 tier = "featured"
 extra_links = []
+
+[[projects]]
+path = "rdny"
+name = "rdny"
+description = "Chrome automation CLI in Rust, deeply inspired by rodney."
+repo = "https://git.sr.ht/~averagechris/rdny"
+downloads = true
+tier = "more"
+extra_links = []

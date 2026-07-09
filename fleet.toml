@@ -173,3 +173,16 @@ quirks = [
   "integration tests that invoke tailwind are gated on `which tailwindcss` and skip outside the dev shell",
   "skills/ dir ships the sideshow-deck-author agent skill — keep in sync with CLI changes",
 ]
+
+[[repos]]
+name = "rdny"
+local = "/Users/chris/projects/rdny"
+pages_subdir = "rdny"
+version_file = "Cargo.toml"
+artifact_prefix = "rdny"
+srht_repo = "rdny"
+binaries = ["rdny"]
+quirks = [
+  "Chrome automation CLI; default package does not bundle a browser, but rdny-bundled is exposed on Linux for browser-containing closures",
+  "extra ci apps: ci-audit, ci-deny, ci-machete, ci-sort",
+]

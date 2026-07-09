@@ -56,6 +56,8 @@
 "linear-cli/linear-cli-v1.6.0-x86_64-linux.tar.gz" = "710f6832a5bfcbd7990b90db182b84b1854248fcd86b7cd6a672f99ccc49202b"
 "linear-cli/linear-cli-v1.6.1-aarch64-darwin.tar.gz" = "0c2efd49804f9a9efea05e2f129c7bf9b934a41c6bd288459e9364bc3094467f"
 "linear-cli/linear-cli-v1.6.1-x86_64-linux.tar.gz" = "9c80c6bb1cb415ab94d7a5157afc9745a5ba551e8d6d6a1aa07fb927f3a57876"
+"rdny/rdny-v0.1.0-aarch64-darwin.tar.gz" = "55a96a85f9fa8b41a241708271d70c7b8ccd92705ca3214640f9d779e8b232f2"
+"rdny/rdny-v0.1.0-x86_64-linux.tar.gz" = "1495db8326acfe103cdd98fd0b51ffaabf3a1e084bf324108c0cf713fa9069b4"
 "sideshow/sideshow-v0.1.0-aarch64-darwin.tar.gz" = "39c1e59b2a14abf5f7002f844c2fd4a869d1e02c862e5a60962b4dbca4085989"
 "sideshow/sideshow-v0.1.0-x86_64-linux.tar.gz" = "d42e090e9e3f6abe59f5e036cc19d8b7fe9f1bf387ae1f3893909d4d048db8d6"
 "sideshow/sideshow-v0.2.0-aarch64-darwin.tar.gz" = "434f2f4a6286a20ea77ba51fb7e3167eb1a5f677d9aebe486f7aa9a3677373e7"
