@@ -68,6 +68,7 @@ Top-level fields:
     artifacts point at sourcehut tag artifact URLs.
 - `release_dates`: object keyed as `project-path/version` with ISO release dates
   learned from local fleet checkouts or read from `release-dates.toml`.
+- `release-artifacts.toml`: committed cache of immutable artifact sha256s and known-absent older artifacts, refreshed by `build-pages`.
 - `state`: exact assembly payload written to published `/state.json`, including
   volatile `generated_at` and `trigger` metadata. Renderers should not need this
   except for parity checks; assembly owns it.

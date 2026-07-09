@@ -12,6 +12,7 @@ replace the entire site; site-data/projects.toml is the registry of subdirectori
 from __future__ import annotations
 
 import argparse
+import concurrent.futures
 import datetime as dt
 import hashlib
 import html
@@ -51,6 +52,11 @@ MAX_DOC_BYTES = 2_000_000
 RELEASE_DATES_HEADER = """# Cache of release tag dates, updated automatically by build-pages when
 # local fleet repos are available. Safe to commit; CI reads it as-is.
 [dates]
+"""
+RELEASE_ARTIFACTS_HEADER = """# Cache of immutable release artifact sha256s (and known-absent artifacts on
+# older tags), updated automatically by build-pages. Safe to commit; CI reads
+# it as-is. Delete a line to force a refetch.
+[sha256]
 """
 
 # Rosé Pine Dawn (light) / Rosé Pine Moon (dark). SourceHut Pages' CSP allows
@@ -261,6 +267,31 @@ def load_fleet(repo: pathlib.Path) -> dict[str, dict]:
     return {r["pages_subdir"]: r for r in data.get("repos", []) if r.get("pages_subdir")}
 
 
+def load_release_artifacts(repo: pathlib.Path) -> tuple[dict[str, str], dict[str, bool]]:
+    path = repo / "release-artifacts.toml"
+    if not path.exists():
+        return {}, {}
+    data = tomllib.loads(path.read_text())
+    return dict(data.get("sha256", {})), dict(data.get("absent", {}))
+
+
+def update_release_artifacts(repo: pathlib.Path, sha256: dict[str, str], absent: dict[str, bool], learned_sha256: dict[str, str], learned_absent: dict[str, bool]) -> None:
+    changed = False
+    for key, value in learned_sha256.items():
+        if sha256.get(key) != value:
+            sha256[key] = value; absent.pop(key, None); changed = True
+    for key in learned_absent:
+        if key not in sha256 and key not in absent:
+            absent[key] = True; changed = True
+    if changed:
+        body = RELEASE_ARTIFACTS_HEADER
+        body += "".join(f'"{k}" = "{sha256[k]}"\n' for k in sorted(sha256))
+        body += "\n[absent]\n"
+        body += "".join(f'"{k}" = true\n' for k in sorted(absent))
+        (repo / "release-artifacts.toml").write_text(body)
+        print("updated release-artifacts.toml with learned artifact shas; commit it with this change")
+
+
 def ls_remote(srht_repo: str) -> tuple[dict[str, str], str]:
     refs_json = os.environ.get("FLEET_REFS_JSON")
     if refs_json:
@@ -400,20 +431,21 @@ def render_download_page(site: dict, project: dict, base_url: str, info: dict) -
 
 def acquire_fleet_data(repo: pathlib.Path, config: dict, site_dir: pathlib.Path, base_url: str) -> dict:
     fleet = load_fleet(repo)
+    cached_sha256, cached_absent = load_release_artifacts(repo)
     published: dict[str, bool] = {}
     meta: dict[str, dict] = {}
     pages: dict[str, set[str]] = {}
     fleet_projects: dict[str, dict] = {}
     state = {"generated_at": dt.datetime.now(dt.UTC).isoformat(), "trigger": {"source": os.environ.get("TRIGGER_SOURCE", "manual"), "project": os.environ.get("TRIGGER_PROJECT", ""), "tag": os.environ.get("TRIGGER_TAG", ""), "sha": os.environ.get("TRIGGER_SHA", "")}, "projects": {}}
-    for p in config["projects"]:
+    def worker(p: dict) -> dict:
         if not p.get("downloads", True) or p["path"] not in fleet:
-            continue
+            return {"path": p["path"], "published": None, "sha256": {}, "absent": {}}
         f = {**fleet[p["path"]], "description": p.get("description", "")}
         print(f"  {p['path']}: resolving tags", flush=True)
         tags, main_sha = ls_remote(f["srht_repo"])
         versions = sorted(tags, key=semver_key, reverse=True)
         if not versions:
-            published[p["path"]] = False; continue
+            return {"path": p["path"], "published": False, "sha256": {}, "absent": {}}
         tag = versions[0]
         project_dir = site_dir / p["path"]; project_dir.mkdir(parents=True, exist_ok=True)
         docs = set()
@@ -425,27 +457,56 @@ def acquire_fleet_data(repo: pathlib.Path, config: dict, site_dir: pathlib.Path,
                 (project_dir / doc).write_bytes(data); docs.add(doc)
         changelog_text = (fetch(srht_raw(f["srht_repo"], tag, "CHANGELOG.md"), soft=True) or b"").decode("utf-8", "replace")
         artifacts = []
-        for v in versions:
+        learned_sha256: dict[str, str] = {}
+        learned_absent: dict[str, bool] = {}
+        for index, v in enumerate(versions):
             for platform in PLATFORMS:
                 name = f"{f['artifact_prefix']}-{v}-{platform}.tar.gz"
                 url = srht_download(f["srht_repo"], v, name); sha_url = url + ".sha256"
-                sha_data = fetch(sha_url, soft=True)
-                if sha_data is None: continue
-                sha = sha_data.decode().split()[0]
-                hosted = versions.index(v) < 3
+                key = f"{p['path']}/{name}"
+                hosted = index < 3
+                sha_data = None
+                if not hosted and key in cached_sha256:
+                    sha = cached_sha256[key]
+                elif not hosted and key in cached_absent:
+                    continue
+                else:
+                    sha_data = fetch(sha_url, soft=True)
+                    if sha_data is None:
+                        if not hosted:
+                            learned_absent[key] = True
+                        continue
+                    sha = sha_data.decode().split()[0]
+                    learned_sha256[key] = sha
                 if hosted:
                     ok = download_artifact(repo, url, name, project_dir / "downloads" / name, soft=True, sha256=sha)
                     if ok:
-                        (project_dir / "downloads" / f"{name}.sha256").write_bytes(sha_data)
+                        (project_dir / "downloads" / f"{name}.sha256").write_bytes(sha_data or b"")
                 artifacts.append({"name": name, "version": v, "platform": platform, "label": platform_label(platform), "url": (f"{base_url}/{p['path']}/downloads/{name}" if hosted else url), "sha_url": (f"{base_url}/{p['path']}/downloads/{name}.sha256" if hosted else sha_url), "sha256": sha, "hosted": hosted})
         info = {"project": f, "tag": tag, "tag_sha": tags[tag], "main_sha": main_sha, "versions": versions, "docs": sorted(docs), "changelog": parse_changelog(changelog_text), "artifacts": artifacts}
         manifest = {"version": tag, "artifacts": [{"name": a["name"], "url": a["url"], "sha256": a["sha256"]} for a in artifacts]}
         (project_dir / "manifest.json").write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n")
-        published[p["path"]] = True; pages[p["path"]] = docs
-        meta[p["path"]] = parse_manifest(manifest) or {"version": tag, "artifacts": [], "platforms": []}
-        state["projects"][p["path"]] = {"tag": tag, "tag_sha": tags[tag], "main_sha": main_sha, "docs": sorted(docs), "hosted_versions": versions[:3], "artifacts": artifacts}
         info.update({"hosted_versions": versions[:3]})
-        fleet_projects[p["path"]] = info
+        return {"path": p["path"], "published": True, "docs": docs, "meta": parse_manifest(manifest) or {"version": tag, "artifacts": [], "platforms": []}, "state": {"tag": tag, "tag_sha": tags[tag], "main_sha": main_sha, "docs": sorted(docs), "hosted_versions": versions[:3], "artifacts": artifacts}, "info": info, "sha256": learned_sha256, "absent": learned_absent}
+
+    learned_sha256: dict[str, str] = {}
+    learned_absent: dict[str, bool] = {}
+    with concurrent.futures.ThreadPoolExecutor(max_workers=6) as executor:
+        futures = {executor.submit(worker, p): p for p in config["projects"]}
+        results = {futures[future]["path"]: future.result() for future in concurrent.futures.as_completed(futures)}
+    for p in config["projects"]:
+        result = results[p["path"]]
+        learned_sha256.update(result["sha256"]); learned_absent.update(result["absent"])
+        if result["published"] is None:
+            continue
+        published[p["path"]] = result["published"]
+        if not result["published"]:
+            continue
+        pages[p["path"]] = result["docs"]
+        meta[p["path"]] = result["meta"]
+        state["projects"][p["path"]] = result["state"]
+        fleet_projects[p["path"]] = result["info"]
+    update_release_artifacts(repo, cached_sha256, cached_absent, learned_sha256, learned_absent)
     return {"published": published, "meta": meta, "project_pages": {k: sorted(v) for k, v in pages.items()}, "projects": fleet_projects, "state": state, "release_dates": {}}
 
 
