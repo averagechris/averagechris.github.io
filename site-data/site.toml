@@ -16,3 +16,7 @@ url = "https://sr.ht/~averagechris/"
 [[site.links]]
 label = "git"
 url = "https://git.sr.ht/~averagechris/"
+
+[[site.links]]
+label = "issues"
+url = "https://todo.sr.ht/~averagechris/projects"
