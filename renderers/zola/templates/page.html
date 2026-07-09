@@ -13,6 +13,18 @@
 {% for note in data.notes %}    <li><span class="muted mono">{{ note.date }}</span> — <a href="/notes/{{ note.slug }}/">{{ note.title }}</a></li>
 {% endfor %}    </ul>
   </main>
+{% elif page.extra.kind == "wiki_index" %}
+  <main class="content">
+    <h1>Wiki</h1>
+    {% if data.site_wiki %}<h2>Site-wide</h2><ul class="more-projects">{% for wiki in data.site_wiki %}<li><a href="/wiki/{{ wiki.slug }}/">{{ wiki.title }}</a> — {{ wiki.description }}</li>{% endfor %}</ul>{% endif %}
+    {% for group in data.project_wiki %}<h2><a href="/{{ group.project.pages_subdir }}/">{{ group.project.name }}</a></h2><ul class="more-projects">{% for wiki in group.pages %}<li><a href="/wiki/{{ wiki.slug }}/">{{ wiki.title }}</a> — {{ wiki.description }}</li>{% endfor %}</ul>{% endfor %}
+  </main>
+{% elif page.extra.kind == "wiki" %}{% set wiki = data.wiki | filter(attribute="slug", value=page.extra.slug) | first %}
+  <main class="content">
+    <h1>{{ wiki.title }}</h1>
+    {% if wiki.project %}<p class="muted">From <a href="/{{ wiki.project.pages_subdir }}/">{{ wiki.project.name }}</a>.</p>{% endif %}
+{{ page.content | safe }}
+  </main>
 {% elif page.extra.kind == "note" %}{% set note = data.notes | filter(attribute="slug", value=page.extra.slug) | first %}
   <main class="content">
     <h1>{{ note.title }}</h1>

@@ -330,6 +330,46 @@ def srht_raw(repo_name: str, ref: str, path: str) -> str:
     return f"https://git.sr.ht/~averagechris/{repo_name}/blob/{urllib.parse.quote(ref, safe='')}/{urllib.parse.quote(path, safe='/')}"
 
 
+
+def parse_wiki_manifest(data: bytes, *, repo_name: str, manifest_path: str = "docs/wiki/index.toml") -> list[dict]:
+    try:
+        manifest = tomllib.loads(data.decode("utf-8"))
+    except (UnicodeDecodeError, tomllib.TOMLDecodeError) as error:
+        fail(f"{repo_name} {manifest_path}: invalid wiki manifest: {error}")
+    pages = manifest.get("pages", [])
+    if not isinstance(pages, list):
+        fail(f"{repo_name} {manifest_path}: missing [[pages]] table")
+    parsed = []
+    seen: set[str] = set()
+    for index, page in enumerate(pages, start=1):
+        if not isinstance(page, dict):
+            fail(f"{repo_name} {manifest_path}: pages[{index}] must be a table")
+        slug = str(page.get("slug", ""))
+        if not re.match(r"^[a-z0-9][a-z0-9-]*$", slug):
+            fail(f"{repo_name} {manifest_path}: pages[{index}].slug must be a lowercase URL slug")
+        if slug in seen:
+            fail(f"{repo_name} {manifest_path}: duplicate wiki slug {slug!r}")
+        seen.add(slug)
+        title = str(page.get("title", "")).strip()
+        description = str(page.get("description", "")).strip()
+        file = str(page.get("file", "")).strip()
+        if not title or not description or not file:
+            fail(f"{repo_name} {manifest_path}: page {slug!r} needs title, description, and file")
+        if file.startswith("/") or ".." in pathlib.PurePosixPath(file).parts:
+            fail(f"{repo_name} {manifest_path}: page {slug!r} file must stay under docs/wiki")
+        parsed.append({"slug": slug, "title": title, "description": description, "file": file})
+    return parsed
+
+
+def detect_wiki_collisions(pages: list[dict]) -> None:
+    owners: dict[str, list[str]] = {}
+    for page in pages:
+        owners.setdefault(page["slug"], []).append(str(page.get("source", "site")))
+    collisions = {slug: vals for slug, vals in owners.items() if len(vals) > 1}
+    if collisions:
+        details = "; ".join(f"{slug}: {', '.join(vals)}" for slug, vals in sorted(collisions.items()))
+        fail(f"duplicate wiki slug(s): {details}")
+
 def srht_download(repo_name: str, tag: str, name: str) -> str:
     return f"https://git.sr.ht/~averagechris/{repo_name}/refs/download/{tag}/{urllib.parse.quote(name)}"
 
@@ -437,6 +477,7 @@ def acquire_fleet_data(repo: pathlib.Path, config: dict, site_dir: pathlib.Path,
     pages: dict[str, set[str]] = {}
     fleet_projects: dict[str, dict] = {}
     state = {"generated_at": dt.datetime.now(dt.UTC).isoformat(), "trigger": {"source": os.environ.get("TRIGGER_SOURCE", "manual"), "project": os.environ.get("TRIGGER_PROJECT", ""), "tag": os.environ.get("TRIGGER_TAG", ""), "sha": os.environ.get("TRIGGER_SHA", "")}, "projects": {}}
+    site_wiki = [{"slug": w.slug, "title": w.title, "description": w.description, "body": w.body, "body_format": w.body_format, "source": "site"} for w in config["wiki"] if w.listed and not w.draft]
     def worker(p: dict) -> dict:
         if not p.get("downloads", True) or p["path"] not in fleet:
             return {"path": p["path"], "published": None, "sha256": {}, "absent": {}}
@@ -452,8 +493,22 @@ def acquire_fleet_data(repo: pathlib.Path, config: dict, site_dir: pathlib.Path,
         with concurrent.futures.ThreadPoolExecutor(max_workers=3) as inner:
             doc_futures = {inner.submit(fetch, srht_raw(f["srht_repo"], main_sha, f"docs/pages/{doc}"), soft=True): doc for doc in DOC_PAGES}
             changelog_future = inner.submit(fetch, srht_raw(f["srht_repo"], tag, "CHANGELOG.md"), soft=True)
+            wiki_manifest_future = inner.submit(fetch, srht_raw(f["srht_repo"], main_sha, "docs/wiki/index.toml"), soft=True)
             doc_results = {doc: future.result() for future, doc in doc_futures.items()}
             changelog_text = (changelog_future.result() or b"").decode("utf-8", "replace")
+            wiki_manifest_data = wiki_manifest_future.result()
+            wiki_pages = []
+            if wiki_manifest_data is None:
+                print(f"  {p['path']}: no docs/wiki/index.toml; skipping wiki", flush=True)
+            else:
+                for wiki in parse_wiki_manifest(wiki_manifest_data, repo_name=f["srht_repo"]):
+                    body_data = fetch(srht_raw(f["srht_repo"], main_sha, f"docs/wiki/{wiki['file']}"), soft=True)
+                    if body_data is None:
+                        print(f"  warn: {p['path']} docs/wiki/{wiki['file']} missing; skipping wiki page {wiki['slug']}", flush=True)
+                        continue
+                    if len(body_data) > MAX_DOC_BYTES:
+                        fail(f"{f['srht_repo']} docs/wiki/{wiki['file']} is larger than {MAX_DOC_BYTES} bytes")
+                    wiki_pages.append({**wiki, "body": body_data.decode("utf-8", "replace"), "body_format": "markdown", "source": f["name"], "project": {"name": f["name"], "pages_subdir": f["pages_subdir"]}})
             for doc in DOC_PAGES:
                 data = doc_results[doc]
                 if data is not None:
@@ -506,7 +561,7 @@ def acquire_fleet_data(repo: pathlib.Path, config: dict, site_dir: pathlib.Path,
                 ok = future.result()
                 if ok:
                     (dest.parent / f"{name}.sha256").write_bytes(sha_data)
-        info = {"project": f, "tag": tag, "tag_sha": tags[tag], "main_sha": main_sha, "versions": versions, "docs": sorted(docs), "changelog": parse_changelog(changelog_text), "artifacts": artifacts}
+        info = {"project": f, "tag": tag, "tag_sha": tags[tag], "main_sha": main_sha, "versions": versions, "docs": sorted(docs), "changelog": parse_changelog(changelog_text), "artifacts": artifacts, "wiki": wiki_pages}
         manifest = {"version": tag, "artifacts": [{"name": a["name"], "url": a["url"], "sha256": a["sha256"]} for a in artifacts]}
         (project_dir / "manifest.json").write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n")
         info.update({"hosted_versions": versions[:3]})
@@ -530,7 +585,9 @@ def acquire_fleet_data(repo: pathlib.Path, config: dict, site_dir: pathlib.Path,
         state["projects"][p["path"]] = result["state"]
         fleet_projects[p["path"]] = result["info"]
     update_release_artifacts(repo, cached_sha256, cached_absent, learned_sha256, learned_absent)
-    return {"published": published, "meta": meta, "project_pages": {k: sorted(v) for k, v in pages.items()}, "projects": fleet_projects, "state": state, "release_dates": {}}
+    all_wiki = site_wiki + [page for info in fleet_projects.values() for page in info.get("wiki", [])]
+    detect_wiki_collisions(all_wiki)
+    return {"published": published, "meta": meta, "project_pages": {k: sorted(v) for k, v in pages.items()}, "projects": fleet_projects, "wiki": all_wiki, "state": state, "release_dates": {}}
 
 
 def write_fleet_json(repo: pathlib.Path, fleet_json: dict) -> pathlib.Path:
@@ -1138,7 +1195,7 @@ def main() -> None:
     args = parser.parse_args()
     repo = pathlib.Path(__file__).resolve().parent.parent
     loaded = load_site_data(repo)
-    config = {"site": dict(loaded.site), "projects": loaded.projects, "pages": loaded.pages, "notes": loaded.notes}
+    config = {"site": dict(loaded.site), "projects": loaded.projects, "pages": loaded.pages, "notes": loaded.notes, "wiki": loaded.wiki}
     site = config["site"]
     site["_config"] = config
     domain = args.domain or site["domain"]

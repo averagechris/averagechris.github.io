@@ -21,6 +21,10 @@ def public_pages(config: dict) -> list:
     return [page for page in config["pages"] if page.listed and not page.draft]
 
 
+def published_wiki(config: dict) -> list[dict]:
+    return sorted([dataclasses.asdict(w) | {"source": "site"} for w in config.get("wiki", []) if w.listed and not w.draft], key=lambda w: w["title"].lower())
+
+
 def published_notes(config: dict) -> list[dict]:
     notes = []
     for note in config["notes"]:
@@ -84,6 +88,15 @@ def build_template_data(config: dict, base_url: str, fleet_json: dict) -> dict:
     project_pages = dict(fleet_json.get("project_pages", {}))
     dates = dict(fleet_json.get("release_dates", {}))
     notes = published_notes(config)
+    wiki_pages = list(fleet_json.get("wiki", [])) or published_wiki(config)
+    site_wiki = [w for w in wiki_pages if w.get("source") == "site"]
+    project_wiki = {}
+    for w in wiki_pages:
+        project = w.get("project")
+        if project:
+            project_wiki.setdefault(project["pages_subdir"], {"project": project, "pages": []})["pages"].append(w)
+    for group in project_wiki.values():
+        group["pages"].sort(key=lambda w: w["title"].lower())
 
     content_pages = [dataclasses.asdict(page) for page in public_pages(config)]
     now = next((dataclasses.asdict(page) for page in config["pages"] if page.slug == "now" and not page.draft), None)
@@ -137,7 +150,7 @@ def build_template_data(config: dict, base_url: str, fleet_json: dict) -> dict:
             install = f"curl -LO {base_url}/{project['pages_subdir']}/downloads/{latest_art['name']}\nsha256sum -c {latest_art['name']}.sha256\ntar -xzf {latest_art['name']}\n{installs}"
         downloads.append({"path": path, "project": project, "info": info, "page_links": [{"label": p.removesuffix(".html"), "url": p} for p in info.get("docs", []) if p in DOC_PAGES], "releases": releases, "whats_new": info.get("changelog", {}).get(info["tag"], "No changelog entry found."), "previous": [{"tag": t, "body": info.get("changelog", {}).get(t, "")} for t in info.get("versions", [])[1:3] if info.get("changelog", {}).get(t)], "install": install})
 
-    return {"base_url": base_url, "site": site, "content_pages": content_pages, "now": now, "nav_pages": nav_pages, "notes": notes, "projects": projects, "downloads": downloads, "has_keys": any(p["slug"] == "keys" for p in content_pages)}
+    return {"base_url": base_url, "site": site, "content_pages": content_pages, "now": now, "nav_pages": nav_pages, "notes": notes, "wiki": wiki_pages, "site_wiki": site_wiki, "project_wiki": [project_wiki[k] for k in sorted(project_wiki)], "projects": projects, "downloads": downloads, "has_keys": any(p["slug"] == "keys" for p in content_pages)}
 
 
 def toml_string(value: str) -> str:
@@ -164,6 +177,12 @@ def write_page(content_dir: pathlib.Path, rel: str, title: str, desc: str, canon
 def render_zola_site(repo: pathlib.Path, config: dict, site_dir: pathlib.Path, base_url: str, fleet_json: dict) -> tuple[set[str], list[dict[str, object]]]:
     data = build_template_data(config, base_url, fleet_json)
     slugs = {page["slug"] for page in data["content_pages"]}
+    wiki_seen: dict[str, str] = {}
+    for wiki in data["wiki"]:
+        owner = wiki.get("source", "site")
+        if wiki["slug"] in wiki_seen:
+            raise SystemExit(f"error: duplicate wiki slug {wiki['slug']!r}: {wiki_seen[wiki['slug']]} and {owner}")
+        wiki_seen[wiki["slug"]] = owner
 
     with tempfile.TemporaryDirectory(prefix="averagechris-zola-") as tmp:
         tmp_path = pathlib.Path(tmp)
@@ -184,6 +203,10 @@ def render_zola_site(repo: pathlib.Path, config: dict, site_dir: pathlib.Path, b
             write_page(content, "/notes/", "Notes · ~averagechris", data["site"]["description"], f"{base_url}/notes/", kind="notes_index")
             for note in data["notes"]:
                 write_page(content, f"/notes/{note['slug']}/", f"{note['title']} · ~averagechris", data["site"]["description"], f"{base_url}/notes/{note['slug']}/", kind="note", body=note["body"], extra={"slug": note["slug"], "body_format": note["body_format"]})
+        if data["wiki"]:
+            write_page(content, "/wiki/", "Wiki · ~averagechris", data["site"]["description"], f"{base_url}/wiki/", kind="wiki_index")
+            for wiki in data["wiki"]:
+                write_page(content, f"/wiki/{wiki['slug']}/", f"{wiki['title']} · ~averagechris", wiki.get("description", data["site"]["description"]), f"{base_url}/wiki/{wiki['slug']}/", kind="wiki", body=wiki["body"], extra={"slug": wiki["slug"], "body_format": wiki.get("body_format", "markdown")})
         write_page(content, "/tools/", "Tools · ~averagechris", data["site"]["description"], base_url + "/tools/", kind="tools")
         for item in data["downloads"]:
             project = item["project"]

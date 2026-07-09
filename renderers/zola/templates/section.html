@@ -13,7 +13,7 @@
       </div>
       <button class="theme-toggle" id="theme-toggle" aria-label="toggle color theme">dawn &frasl; moon</button>
     </div>
-    <nav class="profile-links">{% for link in data.site.links %}<a href="{{ link.url }}">{{ link.label }}</a> {% endfor %}<a href="/tools/">tools</a> {% for page in data.nav_pages %}<a href="/{{ page.slug }}/">{{ page.slug }}</a> {% endfor %}{% if data.notes %}<a href="/notes/">notes</a>{% endif %}</nav>
+    <nav class="profile-links">{% for link in data.site.links %}<a href="{{ link.url }}">{{ link.label }}</a> {% endfor %}<a href="/tools/">tools</a> {% for page in data.nav_pages %}<a href="/{{ page.slug }}/">{{ page.slug }}</a> {% endfor %}{% if data.notes %}<a href="/notes/">notes</a>{% endif %}{% if data.wiki %} <a href="/wiki/">wiki</a>{% endif %}</nav>
   </header>
 
 {% for paragraph in data.site.about_paragraphs %}  <p class="about">{{ paragraph }}</p>

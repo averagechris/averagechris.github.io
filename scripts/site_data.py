@@ -47,11 +47,25 @@ class Note:
 
 
 @dataclasses.dataclass(frozen=True)
+class WikiPage:
+    slug: str
+    title: str
+    description: str
+    date: str
+    body_format: str
+    body: str
+    draft: bool
+    listed: bool
+    source_dir: pathlib.Path
+
+
+@dataclasses.dataclass(frozen=True)
 class SiteData:
     site: dict
     projects: list[dict]
     pages: list[Page]
     notes: list[Note]
+    wiki: list[WikiPage]
 
 
 def _fail(path: pathlib.Path, message: str) -> "sys.NoReturn":
@@ -139,43 +153,38 @@ def _load_pages(root: pathlib.Path) -> list[Page]:
     return pages
 
 
-def _load_notes(root: pathlib.Path) -> list[Note]:
-    notes_root = root / "notes"
-    if not notes_root.is_dir():
-        _fail(notes_root, "missing notes directory")
-    notes: list[Note] = []
+def _load_note_like(root: pathlib.Path, dirname: str, label: str, cls):
+    items = []
+    items_root = root / dirname
+    if not items_root.is_dir():
+        _fail(items_root, f"missing {dirname} directory")
     seen: set[str] = set()
-    for base in (notes_root, notes_root / "_drafts"):
+    for base in (items_root, items_root / "_drafts"):
         if not base.exists():
             continue
         for meta_path in sorted(base.glob("*.toml")):
             meta = _read_toml(meta_path)
             slug = _slug(meta.get("slug"), meta_path)
             if slug in seen:
-                _fail(meta_path, f"duplicate note slug {slug!r}")
+                _fail(meta_path, f"duplicate {label} slug {slug!r}")
             seen.add(slug)
             fmt = _body_format(meta.get("body_format"), meta_path)
             draft = _bool(meta.get("draft"), meta_path, "draft")
             listed = _bool(meta.get("listed"), meta_path, "listed")
             if base.name == "_drafts" and (not draft or listed):
-                _fail(meta_path, "notes in _drafts must be draft=true and listed=false")
+                _fail(meta_path, f"{label}s in _drafts must be draft=true and listed=false")
             if base.name != "_drafts" and (draft or not listed):
-                _fail(meta_path, "published notes must be draft=false and listed=true")
-            notes.append(
-                Note(
-                    slug=slug,
-                    title=_text(meta.get("title"), meta_path, "title"),
-                    description=_text(meta.get("description"), meta_path, "description"),
-                    date=_date(meta.get("date"), meta_path),
-                    draft=draft,
-                    listed=listed,
-                    body_format=fmt,
-                    body=_load_body(meta_path, slug, fmt),
-                    source_dir=base,
-                )
-            )
-    return notes
+                _fail(meta_path, f"published {label}s must be draft=false and listed=true")
+            items.append(cls(slug=slug, title=_text(meta.get("title"), meta_path, "title"), description=_text(meta.get("description"), meta_path, "description"), date=_date(meta.get("date"), meta_path), draft=draft, listed=listed, body_format=fmt, body=_load_body(meta_path, slug, fmt), source_dir=base))
+    return items
 
+
+def _load_notes(root: pathlib.Path) -> list[Note]:
+    return _load_note_like(root, "notes", "note", Note)
+
+
+def _load_wiki(root: pathlib.Path) -> list[WikiPage]:
+    return _load_note_like(root, "wiki", "wiki page", WikiPage)
 
 def _load_projects(root: pathlib.Path) -> list[dict]:
     path = root / "projects.toml"
@@ -222,7 +231,7 @@ def load_site_data(repo: pathlib.Path | str) -> SiteData:
         _fail(site_path, "missing [site] table")
     for key in ("domain", "title", "name", "about"):
         _text(site.get(key), site_path, key)
-    return SiteData(site=site, projects=_load_projects(root), pages=_load_pages(root), notes=_load_notes(root))
+    return SiteData(site=site, projects=_load_projects(root), pages=_load_pages(root), notes=_load_notes(root), wiki=_load_wiki(root))
 
 
 def main() -> None:
@@ -237,7 +246,7 @@ def main() -> None:
         data = load_site_data(repo)
     except SiteDataError as error:
         raise SystemExit(f"error: {error}") from error
-    print(f"ok: {len(data.projects)} projects, {len(data.pages)} pages, {len(data.notes)} notes")
+    print(f"ok: {len(data.projects)} projects, {len(data.pages)} pages, {len(data.notes)} notes, {len(data.wiki)} wiki pages")
 
 
 if __name__ == "__main__":
