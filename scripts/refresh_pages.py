@@ -3,7 +3,7 @@
 
 from __future__ import annotations
 
-import argparse, concurrent.futures, json, os, pathlib, re, subprocess, sys, tempfile, time, tomllib
+import argparse, concurrent.futures, json, os, pathlib, re, shutil, subprocess, sys, tempfile, time, tomllib
 
 SEMVER = re.compile(r"^v\d+\.\d+\.\d+$")
 
@@ -142,7 +142,11 @@ def main() -> None:
             if args.no_publish:
                 print("would publish dist/pages.tar.gz")
                 return
-            run(["nix", "run", ".#publish-pages", "--", "--domain", args.domain], cwd=root)
+            # Prefer the app-provided binary to skip a second in-job flake eval/build.
+            if shutil.which("publish-pages"):
+                run(["publish-pages", "--domain", args.domain], cwd=root)
+            else:
+                run(["nix", "run", ".#publish-pages", "--", "--domain", args.domain], cwd=root)
             return
         print(f"fingerprint moved during build (attempt {attempt}); rebuilding")
         before, before_refs = after, after_refs

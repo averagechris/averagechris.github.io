@@ -449,14 +449,30 @@ def acquire_fleet_data(repo: pathlib.Path, config: dict, site_dir: pathlib.Path,
         tag = versions[0]
         project_dir = site_dir / p["path"]; project_dir.mkdir(parents=True, exist_ok=True)
         docs = set()
-        for doc in DOC_PAGES:
-            data = fetch(srht_raw(f["srht_repo"], main_sha, f"docs/pages/{doc}"), soft=True)
-            if data is not None:
-                if len(data) > MAX_DOC_BYTES:
-                    fail(f"{f['srht_repo']} docs/pages/{doc} is larger than {MAX_DOC_BYTES} bytes")
-                (project_dir / doc).write_bytes(data); docs.add(doc)
-        changelog_text = (fetch(srht_raw(f["srht_repo"], tag, "CHANGELOG.md"), soft=True) or b"").decode("utf-8", "replace")
+        with concurrent.futures.ThreadPoolExecutor(max_workers=3) as inner:
+            doc_futures = {inner.submit(fetch, srht_raw(f["srht_repo"], main_sha, f"docs/pages/{doc}"), soft=True): doc for doc in DOC_PAGES}
+            changelog_future = inner.submit(fetch, srht_raw(f["srht_repo"], tag, "CHANGELOG.md"), soft=True)
+            doc_results = {doc: future.result() for future, doc in doc_futures.items()}
+            changelog_text = (changelog_future.result() or b"").decode("utf-8", "replace")
+            for doc in DOC_PAGES:
+                data = doc_results[doc]
+                if data is not None:
+                    if len(data) > MAX_DOC_BYTES:
+                        fail(f"{f['srht_repo']} docs/pages/{doc} is larger than {MAX_DOC_BYTES} bytes")
+                    (project_dir / doc).write_bytes(data); docs.add(doc)
+
+            sha_prefetches = []
+            for index, v in enumerate(versions):
+                for platform in PLATFORMS:
+                    name = f"{f['artifact_prefix']}-{v}-{platform}.tar.gz"
+                    url = srht_download(f["srht_repo"], v, name); sha_url = url + ".sha256"
+                    key = f"{p['path']}/{name}"
+                    hosted = index < 3
+                    if hosted or (key not in cached_sha256 and key not in cached_absent):
+                        sha_prefetches.append(((v, platform), inner.submit(fetch, sha_url, soft=True)))
+            prefetched_sha = {k: future.result() for k, future in sha_prefetches}
         artifacts = []
+        hosted_downloads = []
         learned_sha256: dict[str, str] = {}
         learned_absent: dict[str, bool] = {}
         for index, v in enumerate(versions):
@@ -471,7 +487,7 @@ def acquire_fleet_data(repo: pathlib.Path, config: dict, site_dir: pathlib.Path,
                 elif not hosted and key in cached_absent:
                     continue
                 else:
-                    sha_data = fetch(sha_url, soft=True)
+                    sha_data = prefetched_sha[(v, platform)]
                     if sha_data is None:
                         if not hosted:
                             learned_absent[key] = True
@@ -479,10 +495,17 @@ def acquire_fleet_data(repo: pathlib.Path, config: dict, site_dir: pathlib.Path,
                     sha = sha_data.decode().split()[0]
                     learned_sha256[key] = sha
                 if hosted:
-                    ok = download_artifact(repo, url, name, project_dir / "downloads" / name, soft=True, sha256=sha)
-                    if ok:
-                        (project_dir / "downloads" / f"{name}.sha256").write_bytes(sha_data or b"")
+                    hosted_downloads.append((url, name, project_dir / "downloads" / name, sha, sha_data or b""))
                 artifacts.append({"name": name, "version": v, "platform": platform, "label": platform_label(platform), "url": (f"{base_url}/{p['path']}/downloads/{name}" if hosted else url), "sha_url": (f"{base_url}/{p['path']}/downloads/{name}.sha256" if hosted else sha_url), "sha256": sha, "hosted": hosted})
+        with concurrent.futures.ThreadPoolExecutor(max_workers=3) as inner:
+            download_futures = {
+                inner.submit(download_artifact, repo, url, name, dest, soft=True, sha256=sha): (dest, name, sha_data)
+                for url, name, dest, sha, sha_data in hosted_downloads
+            }
+            for future, (dest, name, sha_data) in download_futures.items():
+                ok = future.result()
+                if ok:
+                    (dest.parent / f"{name}.sha256").write_bytes(sha_data)
         info = {"project": f, "tag": tag, "tag_sha": tags[tag], "main_sha": main_sha, "versions": versions, "docs": sorted(docs), "changelog": parse_changelog(changelog_text), "artifacts": artifacts}
         manifest = {"version": tag, "artifacts": [{"name": a["name"], "url": a["url"], "sha256": a["sha256"]} for a in artifacts]}
         (project_dir / "manifest.json").write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n")

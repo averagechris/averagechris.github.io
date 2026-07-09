@@ -49,7 +49,7 @@
           name = "build-pages";
           runtimeInputs = [
             python
-            pkgs.git
+            pkgs.gitMinimal
             pkgs.curl
             pkgs.zola
           ];
@@ -59,12 +59,53 @@
           '';
         };
 
+        publishPagesScript = pkgs.writeShellApplication {
+          name = "publish-pages";
+          runtimeInputs = [
+            python
+            srhtPackage
+          ];
+          text = ''
+            ${repoScripts}
+            domain="averagechris.srht.site"
+            while [[ $# -gt 0 ]]; do
+              case "$1" in
+                --domain) domain="$2"; shift 2 ;;
+                -h|--help) printf 'usage: publish-pages [--domain DOMAIN]\n'; exit 0 ;;
+                *) printf 'unknown argument: %s\n' "$1" >&2; exit 1 ;;
+              esac
+            done
+            tarball="dist/pages.tar.gz"
+            if [[ ! -f "$tarball" ]]; then
+              printf 'missing %s; run: nix run .#build-pages\n' "$tarball" >&2
+              exit 1
+            fi
+            site_config_args=()
+            if [[ -f dist/siteconfig.json ]]; then
+              site_config_args=(--site-config-not-found 404.html)
+            fi
+            # CI (builds.sr.ht oauth grant) exports OAUTH2_TOKEN and provisions
+            # ~/.config/hut/config with `access-token "..."` (HCL); srht reads
+            # SRHT_TOKEN. Locally, fall through to srht's own keyring auth.
+            if [[ -z "''${SRHT_TOKEN:-}" ]]; then
+              SRHT_TOKEN="''${OAUTH2_TOKEN:-}"
+              hut_config="''${HOME:-}/.config/hut/config"
+              if [[ -z "$SRHT_TOKEN" && -f "$hut_config" ]] && [[ "$(<"$hut_config")" =~ access-token[[:space:]]+\"([^\"]+)\" ]]; then
+                SRHT_TOKEN="''${BASH_REMATCH[1]}"
+              fi
+              if [[ -n "$SRHT_TOKEN" ]]; then export SRHT_TOKEN; fi
+            fi
+            exec srht pages publish "$tarball" --domain "$domain" "''${site_config_args[@]}"
+          '';
+        };
+
         refreshPagesScript = pkgs.writeShellApplication {
           name = "refresh-pages";
           runtimeInputs = [
             python
             srhtPackage
-            pkgs.git
+            publishPagesScript
+            pkgs.gitMinimal
             pkgs.curl
             pkgs.zola
           ];
@@ -151,38 +192,10 @@
             program = pkgs.lib.getExe buildPagesScript;
           };
 
-          publish-pages = mkApp "publish-pages" ''
-            ${repoScripts}
-            domain="averagechris.srht.site"
-            while [[ $# -gt 0 ]]; do
-              case "$1" in
-                --domain) domain="$2"; shift 2 ;;
-                -h|--help) printf 'usage: publish-pages [--domain DOMAIN]\n'; exit 0 ;;
-                *) printf 'unknown argument: %s\n' "$1" >&2; exit 1 ;;
-              esac
-            done
-            tarball="dist/pages.tar.gz"
-            if [[ ! -f "$tarball" ]]; then
-              printf 'missing %s; run: nix run .#build-pages\n' "$tarball" >&2
-              exit 1
-            fi
-            site_config_args=()
-            if [[ -f dist/siteconfig.json ]]; then
-              site_config_args=(--site-config-not-found 404.html)
-            fi
-            # CI (builds.sr.ht oauth grant) exports OAUTH2_TOKEN and provisions
-            # ~/.config/hut/config with `access-token "..."` (HCL); srht reads
-            # SRHT_TOKEN. Locally, fall through to srht's own keyring auth.
-            if [[ -z "''${SRHT_TOKEN:-}" ]]; then
-              SRHT_TOKEN="''${OAUTH2_TOKEN:-}"
-              hut_config="''${HOME:-}/.config/hut/config"
-              if [[ -z "$SRHT_TOKEN" && -f "$hut_config" ]] && [[ "$(<"$hut_config")" =~ access-token[[:space:]]+\"([^\"]+)\" ]]; then
-                SRHT_TOKEN="''${BASH_REMATCH[1]}"
-              fi
-              if [[ -n "$SRHT_TOKEN" ]]; then export SRHT_TOKEN; fi
-            fi
-            exec srht pages publish "$tarball" --domain "$domain" "''${site_config_args[@]}"
-          '';
+          publish-pages = {
+            type = "app";
+            program = pkgs.lib.getExe publishPagesScript;
+          };
 
           refresh-pages = {
             type = "app";
@@ -235,6 +248,7 @@
           name = "fleet-ci-closure";
           paths = [
             buildPagesScript
+            publishPagesScript
             refreshPagesScript
           ];
         };
