@@ -56,7 +56,17 @@ nix run .#publish-pages
 
 `new-project` writes public `.averagechris-project.toml` metadata but does not
 edit this site's `fleet.toml` or `site-data/projects.toml`; site enrollment is a manual
-follow-up for now.
+follow-up for now. It also documents the shared SourceHut tracker
+<https://todo.sr.ht/~averagechris/projects>, follows the `repo:<name>` issue
+label convention in generated README/AGENTS/project metadata/docs, and
+idempotently creates that label with `srht todo labels create` when needed.
+
+To audit existing fleet repos against the tracker convention without mutating
+SourceHut, run:
+
+```sh
+nix run .#fleet-tracker-audit
+```
 
 Pushing to this repo also republishes the site via `.builds/pages.yml`.
 `.builds/refresh-pages.yml` can be submitted by an external scheduler to run

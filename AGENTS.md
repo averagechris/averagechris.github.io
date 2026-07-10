@@ -41,6 +41,10 @@ Legacy per-repo `hut pages publish --subdirectory` apps are deprecated
 leftovers — leave them; this repo is the sole publisher.
 
 Check conformance: `nix run .#fleet-status` (add `--nix` to verify flake apps).
+Audit SourceHut issue-tracker conformance with `nix run .#fleet-tracker-audit`;
+it is read-only and checks that fleet repos document the umbrella tracker
+`https://todo.sr.ht/~averagechris/projects`, use `repo:<fleet-name>` labels,
+and have matching labels on that tracker.
 Shared release helpers live under `lib.fleet.core`; Rust repos use
 `lib.fleet.presets.rust` via the backward-compatible `lib.mkFleetApps` alias.
 The preset accepts `ciExtraInputs` for extra PATH packages in the ci-* apps
@@ -53,8 +57,11 @@ pass to replace nixfmt/raw Alejandra formatters.
 
 New project bootstrap is `nix run .#new-project` from the target directory. It
 infers the project name from the directory unless `--name` is provided and writes
-public `.averagechris-project.toml` metadata, but intentionally does **not**
-mutate this site checkout or edit `fleet.toml`/`site-data/projects.toml`. Site enrollment
+public `.averagechris-project.toml` metadata, documents the umbrella tracker
+and `repo:<name>` label convention, and idempotently ensures that label exists
+on `https://todo.sr.ht/~averagechris/projects` when srht credentials are
+available. It intentionally does **not** mutate this site checkout or edit
+`fleet.toml`/`site-data/projects.toml`. Site enrollment
 automation is deferred; revisit a workflow driven by todos/workctl so Chris can
 review and apply registry updates explicitly. Default homepage tier metadata is
 `more`; use `--featured` only to mark card intent. Remote usage should include

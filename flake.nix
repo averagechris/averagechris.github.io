@@ -122,8 +122,10 @@
             pkgs.jujutsu
             pkgs.cargo
             pkgs.nix
+            srhtPackage
           ];
           text = ''
+            export PYTHONPATH=${./scripts}:''${PYTHONPATH:-}
             exec python3 ${./scripts/new_project.py} "$@"
           '';
         };
@@ -221,6 +223,11 @@
           fleet-status = mkApp "fleet-status" ''
             ${repoScripts}
             exec python3 scripts/fleet_status.py "$@"
+          '';
+
+          fleet-tracker-audit = mkApp "fleet-tracker-audit" ''
+            ${repoScripts}
+            exec python3 scripts/fleet_tracker_audit.py "$@"
           '';
 
           serve = mkApp "serve" ''

@@ -21,6 +21,8 @@ import sys
 import textwrap
 from dataclasses import dataclass, field
 
+from tracker_labels import UMBRELLA_TRACKER_URL, ensure_repo_label, repo_label
+
 
 DEFAULT_AUTHOR = "Christopher Cummings"
 USER_AGENT = "averagechris-fleet-pages (+https://averagechris.srht.site)"
@@ -567,6 +569,7 @@ def ci_manifest(args: argparse.Namespace) -> str:
 
 
 def readme(args: argparse.Namespace) -> str:
+    label = repo_label(args.name)
     return f"""
     # {args.name}
 
@@ -591,10 +594,17 @@ def readme(args: argparse.Namespace) -> str:
 
     The shared release interface comes from
     `git+https://git.sr.ht/~averagechris/averagechris.srht.site#lib.fleet.presets.rust`.
+
+    ## Issues
+
+    Track project work in the umbrella tracker at <{UMBRELLA_TRACKER_URL}> with
+    the `{label}` label. The `new-project` bootstrap ensures that label exists
+    idempotently when srht credentials are available.
     """
 
 
 def agents_md(args: argparse.Namespace) -> str:
+    label = repo_label(args.name)
     return f"""
     # {args.name} project guidance
 
@@ -629,6 +639,15 @@ def agents_md(args: argparse.Namespace) -> str:
     `.builds/ci.yml` runs automatically on every push and warms the
     averagechris-dotfiles Cachix cache when the CI secret is available.
     `builds/release-linux-x86_64.yml` is explicit-submit only; do not move it to `.builds/`.
+
+    ## Issue tracking
+
+    Project work belongs in the umbrella SourceHut tracker:
+    {UMBRELLA_TRACKER_URL}
+
+    Use the `{label}` label for this repository. The label follows the fleet
+    convention `repo:<fleet-name>` and is intentionally separate from artifact,
+    binary, or SourceHut repository aliases.
     """
 
 
@@ -719,6 +738,7 @@ def deny_toml() -> str:
 
 
 def enrollment_manifest(args: argparse.Namespace) -> str:
+    label = repo_label(args.name)
     return f"""
     # Public project metadata for future averagechris fleet enrollment.
     # This file is informational today; site registry updates are manual.
@@ -732,6 +752,8 @@ def enrollment_manifest(args: argparse.Namespace) -> str:
     version_file = "Cargo.toml"
     homepage_tier = {toml_string(args.tier)}
     downloads = true
+    tracker = {toml_string(UMBRELLA_TRACKER_URL)}
+    tracker_label = {toml_string(label)}
 
     [pages]
     docs = ["overview.html", "examples.html", "demo.html", "changelog.html"]
@@ -744,6 +766,7 @@ def docs_page(args: argparse.Namespace, page: str) -> str:
     description = html_escape(args.description)
     binary = html_escape(args.binary)
     if page == "overview.html":
+        label = html_escape(repo_label(args.name))
         body = f"""
         <h1>{project}</h1>
         <p class="lede">{description}</p>
@@ -751,6 +774,7 @@ def docs_page(args: argparse.Namespace, page: str) -> str:
           <li>Install released binaries from <a href="index.html">downloads</a>.</li>
           <li>Read the release notes in <a href="changelog.html">changelog</a>.</li>
           <li>See command shapes in <a href="examples.html">examples</a>.</li>
+          <li>Track issues at <a href="{UMBRELLA_TRACKER_URL}">~averagechris/projects</a> with <code>{label}</code>.</li>
         </ul>
         """
     elif page == "examples.html":
@@ -890,6 +914,26 @@ def generate_locks(args: argparse.Namespace, log: ActionLog) -> None:
             log.note_skip("nix not found on PATH; flake.lock not generated")
 
 
+def ensure_tracker_label(args: argparse.Namespace, log: ActionLog) -> None:
+    if args.no_tracker_label:
+        log.note_skip("tracker label creation disabled by --no-tracker-label")
+        return
+    if not command_exists(args.srht_bin):
+        log.note_skip(f"{args.srht_bin} not found on PATH; tracker label {repo_label(args.name)} not ensured")
+        return
+    try:
+        created, label = ensure_repo_label(args.name, srht_bin=args.srht_bin, dry_run=log.dry_run)
+    except Exception as exc:  # noqa: BLE001 - preserve scaffold success if SourceHut is unavailable.
+        log.note_skip(f"could not ensure {UMBRELLA_TRACKER_URL} label {repo_label(args.name)}: {exc}")
+        return
+    if log.dry_run:
+        print(f"dry-run: would ensure {UMBRELLA_TRACKER_URL} has label {label}")
+    elif created:
+        print(f"created tracker label: {label}")
+    else:
+        log.note_skip(f"tracker label {label} already exists")
+
+
 def describe_new_change(args: argparse.Namespace, log: ActionLog) -> None:
     if args.no_describe or args.no_repo_init or not command_exists("jj"):
         return
@@ -931,6 +975,8 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--no-cargo-lock", action="store_true", help="do not run cargo generate-lockfile")
     parser.add_argument("--no-flake-lock", action="store_true", help="do not run nix flake lock")
     parser.add_argument("--no-describe", action="store_true", help="do not describe the jj working-copy change")
+    parser.add_argument("--no-tracker-label", action="store_true", help="do not ensure the umbrella todo.sr.ht repo:<name> label")
+    parser.add_argument("--srht-bin", default="srht", help="srht executable to use for tracker label checks (default: srht)")
     parser.add_argument("--tier", choices=["featured", "more"], default="more", help="homepage tier recorded in .averagechris-project.toml (default: more)")
     parser.add_argument("--featured", action="store_true", help="shortcut for --tier featured")
     args = parser.parse_args(argv)
@@ -963,12 +1009,14 @@ def main(argv: list[str] | None = None) -> int:
     init_jj(args, log)
     describe_new_change(args, log)
     generate_locks(args, log)
+    ensure_tracker_label(args, log)
 
     print("\nDone. Next steps:")
     print(f"  cd {shlex.quote(str(args.dir.resolve()))}")
     print("  nix run .#ci-fmt && nix run .#ci-clippy && nix run .#ci-test")
     print("  nix run .#ci-machete && nix run .#ci-sort && nix run .#ci-deny && nix run .#ci-audit")
     print(f"  # create/push the sourcehut repo when ready: https://git.sr.ht/~averagechris/{args.srht_repo}")
+    print(f"  # issues: {UMBRELLA_TRACKER_URL} with label {repo_label(args.name)}")
     print("  # site enrollment is deferred; metadata is in .averagechris-project.toml")
     return 0
 
