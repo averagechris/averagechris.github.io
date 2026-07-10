@@ -131,7 +131,7 @@ STYLE = """\
     padding: 0.12rem 0.55rem; border-radius: 3px; margin-top: 0.25rem; margin-left: 0.5rem;
   }
   .project p { margin: 0 0 0.9rem; font-size: 0.95rem; color: var(--subtle); }
-  .project-links { display: flex; gap: 1.1rem; font-size: 0.9rem; font-family: ui-monospace, Menlo, monospace; flex-wrap: wrap; }
+  .project-links, .page-links { display: flex; gap: 1.1rem; font-size: 0.9rem; font-family: ui-monospace, Menlo, monospace; flex-wrap: wrap; }
   .project-links a.primary-link { font-weight: 700; }
   .pending { color: var(--muted); font-style: italic; }
   .more-projects { padding-left: 1.4rem; }
