@@ -34,9 +34,9 @@ substitute instead of building.
 ## Generated fleet renderer contract
 
 `averagechris_site.build` (with `scripts/build_pages.py` retained as a thin
-compatibility wrapper) is split into acquisition, rendering, and assembly
+compatibility wrapper) is split into acquisition, Zola rendering, and assembly
 phases. Acquisition writes `generated/fleet.json`, a derived, renderer-agnostic
-JSON file for the HTML renderer. Renderers should read this file after it has
+JSON file for Zola materialization. Zola reads this file after it has
 round-tripped through JSON rather than sharing Python-only objects.
 
 Top-level fields:
@@ -79,29 +79,23 @@ intentionally keeps site-domain-dependent strings only where current published
 state and download manifests already require exact URLs; renderers receive the
 domain/base URL separately for new links.
 
-## Renderer swap validation
+## Rendered-output regression validation
 
-Before replacing the site's renderer in production (for example, moving from the
-current Python string-template renderer to Zola), build the old and new outputs
-into separate directories and compare them with
+Before changing site rendering, build a known-good Zola baseline and the
+candidate Zola output into separate directories and compare them with
 `PYTHONPATH=scripts python3 -m averagechris_site.compare OLD_TREE NEW_TREE --ignore-volatile`
 (or the thin `scripts/compare_site_trees.py` compatibility wrapper).
 The harness checks URL inventory, structural HTML signals (titles, metadata,
 headings, links, and visible content mass), and byte equality for non-HTML files
 such as downloads, `.sha256` files, images, and JSON.
 
-Use this as the local validation gate after pages-alike server QA and before the
-production cutover. Missing HTML pages, downloads, SHA files, HTML structural
-drift, or non-HTML byte mismatches are blockers unless the URL/content change is
-intentional and documented.
+Use this as the local validation gate after pages-alike server QA. Missing HTML
+pages, downloads, SHA files, HTML structural drift, or non-HTML byte mismatches
+are blockers unless the URL/content change is intentional and documented.
 
-Zola is the production renderer (the default for `nix run .#build-pages`; cut
-over 2026-07-05 after the comparison harness reported full structural parity).
-The Python string-template renderer remains available as a rollback via
-`nix run .#build-pages -- --renderer python` until it is retired. The build
-still runs the normal acquisition phase first, so docs, downloads, manifests,
-`state.json`, and `siteconfig.json` remain owned by acquisition/assembly. The
-Zola renderer then materializes a temporary Zola tree from canonical
+Zola is the sole renderer. The build runs the normal acquisition phase first, so
+docs, downloads, manifests, `state.json`, and `siteconfig.json` remain owned by
+acquisition/assembly. The Zola renderer then materializes a temporary Zola tree from canonical
 `site-data/` plus `generated/fleet.json`, copies `renderers/zola/templates`,
 runs `zola build`, and merges only the generated HTML into `dist/site` without
 clobbering acquired non-HTML files. Zola front matter is derived throwaway

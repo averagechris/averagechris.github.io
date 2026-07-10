@@ -29,7 +29,7 @@
       system: let
         pkgs = nixpkgs.legacyPackages.${system};
         srhtPackage = srht.packages.${system}.srht;
-        python = pkgs.python3.withPackages (ps: [ps.markdown]);
+        python = pkgs.python3;
 
         mkApp = name: script: {
           type = "app";

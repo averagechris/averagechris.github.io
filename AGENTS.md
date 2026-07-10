@@ -175,17 +175,18 @@ If main moved since the workspace was created, `jj rebase -s <change-id> -d main
   (e.g. `nix run .#publish-pages -- --help`) before pushing. ShellCheck 0.11
   rejects `export VAR="$(...)"` (SC2155): assign, then `export VAR`.
 
-### Site rendering (post-Zola cutover, 2026-07-05)
+### Site rendering (Zola-only, post-cutover)
 
-- **Zola is the production renderer** (`renderers/zola/` templates +
+- **Zola is the sole renderer** (`renderers/zola/` templates +
   `averagechris_site.zola`), materialized from canonical `site-data/`
-  plus `generated/fleet.json`. The legacy Python renderer is rollback-only:
-  `nix run .#build-pages -- --renderer python`. Templates are renderer-owned;
+  plus `generated/fleet.json`. Obsolete `--renderer` arguments are rejected.
+  Templates are renderer-owned;
   content/metadata truth lives in `site-data/` (validated by
   `PYTHONPATH=scripts python3 -m averagechris_site.data --check`).
 - Any change that can affect rendered output MUST be gated with
   `PYTHONPATH=scripts python3 -m averagechris_site.compare OLD_TREE NEW_TREE --ignore-volatile`
-  (structural parity harness; see docs/architecture.md).
+  comparing a known-good Zola baseline to candidate Zola output (structural
+  regression harness; see docs/architecture.md).
 - `nix run .#serve` is a **pages-alike** server: real SourceHut Pages CSP
   header, correct MIME types (incl. `application/wasm`), real-404 rendering.
   Internal links are root-relative, so local click-through just works.

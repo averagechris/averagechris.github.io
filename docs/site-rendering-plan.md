@@ -127,10 +127,10 @@ Requirements:
 
 ## Zola renderer milestone
 
-**Status: DONE (2026-07-05) — Zola is the production renderer.** Full
+**Status: DONE (2026-07-05) — Zola is the sole renderer.** Full
 structural parity proven with `averagechris_site.compare` plus a
-pixel-identical homepage screenshot; Python renderer kept as rollback via
-`--renderer python` until retirement.
+pixel-identical homepage screenshot; the legacy Python renderer was later
+retired after Zola baked successfully in production.
 
 Tasks:
 

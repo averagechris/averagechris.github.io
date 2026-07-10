@@ -20,10 +20,8 @@ This repo is the single publisher for the whole site. Fleet project releases
 provide durable sourcehut tags, tag artifacts, and repo files. `build-pages`
 renders the root homepage plus project pages from those sources, and
 `refresh-pages` publishes the result. Refreshes are triggered by project release
-jobs and by an hourly check. Rendering uses Zola (`renderers/zola/`),
-materialized from canonical `site-data/` plus `generated/fleet.json`; the
-legacy Python renderer remains a rollback via
-`nix run .#build-pages -- --renderer python`. See
+jobs and by an hourly check. Zola (`renderers/zola/`) is the sole renderer,
+materialized from canonical `site-data/` plus `generated/fleet.json`. See
 [docs/architecture.md](docs/architecture.md) for repo-internal implementation
 details and [docs/site-rendering-plan.md](docs/site-rendering-plan.md) for
 milestone status.
@@ -45,7 +43,7 @@ nix run .#note -- new "Title"
 nix run .#note -- distill
 nix run .#note -- publish <draft>
 
-# build from fleet tags/artifacts, generate index.html, pack dist/pages.tar.gz
+# build from fleet tags/artifacts with Zola and pack dist/pages.tar.gz
 nix run .#build-pages
 
 nix run .#serve            # pages-alike local server (live Pages CSP/MIME/404) on http://localhost:8000
