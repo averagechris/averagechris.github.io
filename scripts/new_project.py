@@ -452,7 +452,7 @@ def release_manifest(args: argparse.Namespace) -> str:
     arch: x86_64
     oauth: git.sr.ht/OBJECTS:RW git.sr.ht/REPOSITORIES:RO git.sr.ht/PROFILE:RO builds.sr.ht/JOBS:RW builds.sr.ht/SECRETS:RO builds.sr.ht/PROFILE:RO meta.sr.ht/PROFILE:RO pages.sr.ht/PAGES:RW
     secrets:
-      - 731f7e55-4497-4228-8fa4-1657da7d3625 # cachix averagechris-dotfiles -> ~/.ci_secrets/cachix_token
+      - 5ec60320-e0d8-4ebe-8b45-1d10cc4d2cb2 # cachix averagechris-dotfiles -> ~/.ci_secrets/cachix_token
     environment:
       GIT_CONFIG_COUNT: "1"
       GIT_CONFIG_KEY_0: http.userAgent
@@ -477,13 +477,17 @@ def release_manifest(args: argparse.Namespace) -> str:
           [ -e result-release-artifact ] || {{ echo "release-artifact result missing; skipping cache warm"; exit 0; }}
           nix build .#default --out-link result-pkg --print-build-logs
           [ -e result-pkg ] || {{ echo "package result missing; skipping cache warm"; exit 0; }}
+          set +x
           CACHIX_AUTH_TOKEN="$(cat ~/.ci_secrets/cachix_token)"; export CACHIX_AUTH_TOKEN
+          set -x
           nix run --inputs-from . nixpkgs#cachix -- push averagechris-dotfiles result-release-artifact result-pkg
       - upload-and-refresh: |
           set -eu
           cd {args.srht_repo}
           srht() {{ nix run 'git+https://git.sr.ht/~averagechris/srht' -- "$@"; }}
+          set +x
           export SRHT_TOKEN="${{SRHT_TOKEN:-${{OAUTH2_TOKEN:-$(awk '/access-token/ {{ gsub(/"/, "", $2); print $2; exit }}' ~/.config/hut/config 2>/dev/null || true)}}}}"
+          set -x
           version="$(awk '/^\\[package\\]/{{s=1}} s && /^version = /{{gsub(/"/,"",$3); print $3; exit}}' Cargo.toml)"
           tag="v${{version#v}}"
           commit="$(git rev-parse HEAD)"
@@ -534,7 +538,7 @@ def ci_manifest(args: argparse.Namespace) -> str:
     # If packages are later required on nixos/unstable, use channel-prefixed names
     # (for example, nixos.git); unprefixed names fail before tasks start.
     secrets:
-      - 731f7e55-4497-4228-8fa4-1657da7d3625 # cachix averagechris-dotfiles -> ~/.ci_secrets/cachix_token
+      - 5ec60320-e0d8-4ebe-8b45-1d10cc4d2cb2 # cachix averagechris-dotfiles -> ~/.ci_secrets/cachix_token
     environment:
       NIX_CONFIG: |
         experimental-features = nix-command flakes
@@ -563,7 +567,9 @@ def ci_manifest(args: argparse.Namespace) -> str:
           cd {args.srht_repo}
           if [ ! -f ~/.ci_secrets/cachix_token ]; then echo "no cachix token available; skipping cache warm"; exit 0; fi
           [ -e ./result ] || {{ echo "package result missing; skipping cache warm"; exit 0; }}
+          set +x
           CACHIX_AUTH_TOKEN="$(cat ~/.ci_secrets/cachix_token)"; export CACHIX_AUTH_TOKEN
+          set -x
           nix run --inputs-from . nixpkgs#cachix -- push averagechris-dotfiles ./result
     """
 

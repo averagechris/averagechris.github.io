@@ -4,7 +4,7 @@ arch: x86_64
 # If packages are later required on nixos/unstable, use channel-prefixed names
 # (for example, nixos.git); unprefixed names fail before tasks start.
 secrets:
-  - 731f7e55-4497-4228-8fa4-1657da7d3625 # cachix averagechris-dotfiles -> ~/.ci_secrets/cachix_token
+  - 5ec60320-e0d8-4ebe-8b45-1d10cc4d2cb2 # cachix averagechris-dotfiles -> ~/.ci_secrets/cachix_token
 environment:
   NIX_CONFIG: |
     experimental-features = nix-command flakes
@@ -33,5 +33,7 @@ tasks:
       cd example-cli
       if [ ! -f ~/.ci_secrets/cachix_token ]; then echo "no cachix token available; skipping cache warm"; exit 0; fi
       [ -e ./result ] || { echo "package result missing; skipping cache warm"; exit 0; }
+      set +x
       CACHIX_AUTH_TOKEN="$(cat ~/.ci_secrets/cachix_token)"; export CACHIX_AUTH_TOKEN
+      set -x
       nix run --inputs-from . nixpkgs#cachix -- push averagechris-dotfiles ./result
