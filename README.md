@@ -71,8 +71,12 @@ only when the durable sources changed.
 - `site-data/notes/` — published note TOML sidecars + bodies rendered to `/notes/<slug>/`
 - `site-data/notes/_drafts/` — unpublished note drafts; the checked loader refuses to publish them
 - `release-dates.toml` — cache of release tag dates used by CI builds
-- `scripts/build_pages.py` — build fleet pages + generate homepage/tools + tar
+- `scripts/averagechris_site/` — internal Python package for site data,
+  fleet acquisition, building, Zola materialization, and tree comparison
+- `python3 -m averagechris_site.build` (or compatibility wrapper
+  `scripts/build_pages.py`) — build fleet pages + generate homepage/tools + tar
 - `scripts/refresh_pages.py` — race-safe fingerprint check and publish wrapper
-- `scripts/site_data.py` — validate canonical `site-data/` (`python3 scripts/site_data.py --check`)
+- `python3 -m averagechris_site.data` (or compatibility wrapper
+  `scripts/site_data.py`) — validate canonical `site-data/` (`PYTHONPATH=scripts python3 -m averagechris_site.data --check`)
 - `scripts/add_project.py` — append a project entry to `site-data/projects.toml`
 - `scripts/note.py` — create, distill, list, and publish notes

@@ -76,7 +76,7 @@ production domain at `/labs/wasm-test/` and verified with browser automation:
 ## Canonical data model milestone
 
 **Status: DONE (2026-07-05).** Canonical `site-data/` + checked loader
-(`scripts/site_data.py --check`) landed; Python builder output verified
+(`PYTHONPATH=scripts python3 -m averagechris_site.data --check`) landed; Python builder output verified
 byte-identical during migration.
 
 Tasks:
@@ -128,7 +128,7 @@ Requirements:
 ## Zola renderer milestone
 
 **Status: DONE (2026-07-05) — Zola is the production renderer.** Full
-structural parity proven with `scripts/compare_site_trees.py` plus a
+structural parity proven with `averagechris_site.compare` plus a
 pixel-identical homepage screenshot; Python renderer kept as rollback via
 `--renderer python` until retirement.
 
@@ -251,7 +251,7 @@ Requirements:
 
 ## Validation milestone
 
-**Status: ONGOING GATE.** Harness (`scripts/compare_site_trees.py`) and
+**Status: ONGOING GATE.** Harness (`averagechris_site.compare`) and
 pages-alike QA are in place and gated the Zola cutover; re-run for every
 renderer-affecting change. Island/progressive-nav items pending those
 milestones.

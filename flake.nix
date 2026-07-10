@@ -55,7 +55,7 @@
           ];
           text = ''
             ${repoScripts}
-            exec python3 scripts/build_pages.py "$@"
+            exec python3 -m averagechris_site.build "$@"
           '';
         };
 
@@ -145,6 +145,7 @@
           export GIT_TERMINAL_PROMPT=0
           repo_root="$(git rev-parse --show-toplevel 2>/dev/null || jj root)"
           cd "$repo_root"
+          export PYTHONPATH="$repo_root/scripts''${PYTHONPATH:+:$PYTHONPATH}"
         '';
 
         # Closure used by .builds/cache-flake.yml. Keep this generic so adding

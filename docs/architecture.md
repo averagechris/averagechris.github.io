@@ -33,7 +33,8 @@ substitute instead of building.
 
 ## Generated fleet renderer contract
 
-`scripts/build_pages.py` is split into acquisition, rendering, and assembly
+`averagechris_site.build` (with `scripts/build_pages.py` retained as a thin
+compatibility wrapper) is split into acquisition, rendering, and assembly
 phases. Acquisition writes `generated/fleet.json`, a derived, renderer-agnostic
 JSON file for the HTML renderer. Renderers should read this file after it has
 round-tripped through JSON rather than sharing Python-only objects.
@@ -83,7 +84,8 @@ domain/base URL separately for new links.
 Before replacing the site's renderer in production (for example, moving from the
 current Python string-template renderer to Zola), build the old and new outputs
 into separate directories and compare them with
-`python3 scripts/compare_site_trees.py OLD_TREE NEW_TREE --ignore-volatile`.
+`PYTHONPATH=scripts python3 -m averagechris_site.compare OLD_TREE NEW_TREE --ignore-volatile`
+(or the thin `scripts/compare_site_trees.py` compatibility wrapper).
 The harness checks URL inventory, structural HTML signals (titles, metadata,
 headings, links, and visible content mass), and byte equality for non-HTML files
 such as downloads, `.sha256` files, images, and JSON.

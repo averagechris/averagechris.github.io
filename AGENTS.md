@@ -171,13 +171,13 @@ If main moved since the workspace was created, `jj rebase -s <change-id> -d main
 ### Site rendering (post-Zola cutover, 2026-07-05)
 
 - **Zola is the production renderer** (`renderers/zola/` templates +
-  `scripts/materialize_zola.py`), materialized from canonical `site-data/`
+  `averagechris_site.zola`), materialized from canonical `site-data/`
   plus `generated/fleet.json`. The legacy Python renderer is rollback-only:
   `nix run .#build-pages -- --renderer python`. Templates are renderer-owned;
   content/metadata truth lives in `site-data/` (validated by
-  `python3 scripts/site_data.py --check`).
+  `PYTHONPATH=scripts python3 -m averagechris_site.data --check`).
 - Any change that can affect rendered output MUST be gated with
-  `python3 scripts/compare_site_trees.py OLD_TREE NEW_TREE --ignore-volatile`
+  `PYTHONPATH=scripts python3 -m averagechris_site.compare OLD_TREE NEW_TREE --ignore-volatile`
   (structural parity harness; see docs/architecture.md).
 - `nix run .#serve` is a **pages-alike** server: real SourceHut Pages CSP
   header, correct MIME types (incl. `application/wasm`), real-404 rendering.
