@@ -165,6 +165,10 @@ If main moved since the workspace was created, `jj rebase -s <change-id> -d main
 
 ## Homepage maintenance
 
+- Agents editing public site copy MUST first read `docs/editorial-style.md` and
+  state the editing mode they are applying. Author-facing content workflow,
+  Markdown/TOML boundaries, and draft/publish safety live in
+  `docs/content-authoring.md`.
 - Add a project: `nix run .#add-project -- <path> --description "..." [--no-downloads] [--tier more]`
 - Republish: push to this repo (CI does it) or `nix run .#build-pages && nix run .#publish-pages`
 - Fleet project pages are rendered here from git.sr.ht tags, tag artifacts, and docs fetched from pinned main SHAs.

@@ -73,9 +73,18 @@ only when the durable sources changed.
 
 ## Files
 
-- `site-data/site.toml` — site metadata (about, links, domain)
-- `site-data/projects.toml` — project registry; fleet release mechanics stay in `fleet.toml`
-- `site-data/pages/` — root-owned page TOML sidecars + Markdown/HTML bodies rendered to `/<slug>/`
+- `site-data/site.toml` — structured site metadata: domain, title, tagline,
+  links, and ordered `featured_projects`
+- `site-data/home.md` — published personal homepage prose
+- `site-data/_drafts/home.md` — unpublished homepage prose alternatives
+- `site-data/projects.toml` — project registry and concise card descriptions;
+  fleet release mechanics stay in `fleet.toml`
+- `site-data/projects/<path>.md` — optional fuller prose for a listed project's
+  own page; all listed projects get a project page even without this file
+- `site-data/projects/_drafts/outline-template.md` — reusable draft scaffold for
+  project-page prose
+- `site-data/pages/` — standalone page TOML sidecars + Markdown/HTML bodies rendered to `/<slug>/`
+- `site-data/pages/_drafts/` — unpublished standalone page drafts
 - `site-data/notes/` — published note TOML sidecars + bodies rendered to `/notes/<slug>/`
 - `site-data/notes/_drafts/` — unpublished note drafts; the checked loader refuses to publish them
 - `release-dates.toml` — cache of release tag dates used by CI builds

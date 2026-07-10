@@ -1,11 +1,12 @@
 # Architecture
 
-This repo is the single Pages publisher for `averagechris.srht.site`. Fleet
-projects publish durable inputs on sourcehut: semver tags, tag artifacts, and
-selected files from pinned revisions. `build-pages` resolves each fleet repo's
-latest semver tag and main SHA, downloads immutable tag artifacts, fetches
-`CHANGELOG.md` at the tag, fetches optional docs pages from pinned main, and
-records the exact inputs in `/state.json`.
+This repo is the single Pages publisher for `averagechris.srht.site`. Canonical
+site prose and structured facts live in `site-data/`. Fleet projects add durable
+sourcehut inputs: semver tags, tag artifacts, and selected files from pinned
+revisions. `build-pages` resolves each fleet repo's latest semver tag and main
+SHA, downloads immutable tag artifacts, fetches `CHANGELOG.md` at the tag,
+fetches optional docs pages from pinned main, and records the exact inputs in
+`/state.json`.
 
 Project release jobs submit an ephemeral refresh manifest equivalent to
 `.builds/refresh-pages.yml`, with `TRIGGER_*` env. An hourly thorny timer is the
@@ -33,6 +34,13 @@ substitute instead of building.
 
 ## Generated fleet renderer contract
 
+All listed projects in `site-data/projects.toml` receive a project page. Fleet
+data enriches release-enabled pages with downloads, release metadata,
+changelogs, and copied docs. Source-only listed projects still render a source
+and project-orientation page using the site registry and any optional
+`site-data/projects/<path>.md` prose; they do not need release artifacts to have
+a useful page.
+
 `averagechris_site.build` (with `scripts/build_pages.py` retained as a thin
 compatibility wrapper) is split into acquisition, Zola rendering, and assembly
 phases. Acquisition writes `generated/fleet.json`, a derived, renderer-agnostic
@@ -41,16 +49,17 @@ round-tripped through JSON rather than sharing Python-only objects.
 
 Top-level fields:
 
-- `published`: object keyed by project path. Values are booleans: `true` when a
-  downloads page should be rendered, `false` when a release-enabled project has
-  no semver release yet.
+- `published`: object keyed by project path. Values are booleans: `true` when
+  release/download data is available for that project, `false` when a
+  release-enabled project has no semver release yet. Listed source-only projects
+  can still have project pages without downloads.
 - `meta`: object keyed by project path. Values summarize the latest renderable
   release for homepage/tool cards: `version`, `platforms`, and `artifacts`.
   Each meta artifact has `name`, renderer-facing `url`, `sha256`, and `label`.
 - `project_pages`: object keyed by project path. Values are sorted lists of
   fetched docs page filenames copied under that project path.
 - `projects`: object keyed by project path with the complete fleet facts needed
-  for a project downloads page and refresh fingerprinting:
+  for project pages with downloads and refresh fingerprinting:
   - `project`: project metadata copied from `fleet.toml` plus the public
     description from `site-data/projects.toml` (`name`, `pages_subdir`,
     `srht_repo`, `artifact_prefix`, optional `binaries`, and related fleet
