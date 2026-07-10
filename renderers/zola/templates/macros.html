@@ -14,18 +14,19 @@
   <style>
 {% include "style.html" %}  </style>
 {%- endmacro %}
-{% macro masthead() -%}
+{% macro masthead(nav) -%}
 <header>
     <div class="masthead">
       <h1><a href="/">~averagechris</a></h1>
       <button class="theme-toggle" id="theme-toggle" aria-label="toggle color theme">dawn &frasl; moon</button>
     </div>
+    <nav class="primary-nav" aria-label="Primary">{% for link in nav %}<a href="{{ link.url }}">{{ link.label }}</a>{% endfor %}</nav>
   </header>
   <hr class="divider">
 {%- endmacro %}
-{% macro footer() -%}
+{% macro footer(links) -%}
 <footer>
-    <p>Source for this page: <a href="https://git.sr.ht/~averagechris/averagechris.srht.site">averagechris.srht.site</a>.</p>
+    <nav aria-label="Site utilities">{% for link in links %}<a href="{{ link.url }}">{{ link.label }}</a>{% endfor %}</nav>
   </footer>
 {%- endmacro %}
 {% macro head_script() -%}

@@ -3,5 +3,5 @@ title = "Now"
 description = "Current notes from Chris."
 date = "2026-07-05"
 listed = false
-draft = false
+draft = true
 body_format = "markdown"

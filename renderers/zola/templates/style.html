@@ -58,8 +58,15 @@
     flex-shrink: 0; margin-top: 0.5rem;
   }
   .theme-toggle:hover { border-color: var(--rose); color: var(--text); }
-  .profile-links { display: flex; gap: 1.25rem; margin: 1rem 0 0; font-size: 0.95rem; flex-wrap: wrap; }
-  .about { max-width: 62ch; margin-top: 1.75rem; font-size: 1.08rem; }
+  .profile-links, .primary-nav { display: flex; gap: 1.25rem; margin: 1rem 0 0; font-size: 0.95rem; flex-wrap: wrap; }
+  .profile-links { color: var(--subtle); }
+  .primary-nav { font-family: ui-monospace, Menlo, monospace; }
+  .home-header .primary-nav { margin-top: 0.65rem; }
+  .intro { max-width: 62ch; margin-top: 1.75rem; font-size: 1.08rem; }
+  .home-section { margin-top: 2.75rem; }
+  .now-summary { max-width: 70ch; border-left: 3px solid var(--hl-med); padding-left: 1.25rem; }
+  .now-summary h2 { margin-bottom: 0; }
+  .now-summary .muted { margin-top: 0.2rem; }
   .muted { color: var(--muted); }
   .mono { font-family: ui-monospace, Menlo, monospace; }
   .divider { border: none; border-top: 1px solid var(--hl-med); margin: 2.5rem 0; position: relative; overflow: visible; }
@@ -87,9 +94,19 @@
     padding: 0.12rem 0.55rem; border-radius: 3px; margin-top: 0.25rem; margin-left: 0.5rem;
   }
   .project p { margin: 0 0 0.9rem; font-size: 0.95rem; color: var(--subtle); }
+  .project h3 a { color: inherit; }
   .project-links, .page-links { display: flex; gap: 1.1rem; font-size: 0.9rem; font-family: ui-monospace, Menlo, monospace; flex-wrap: wrap; }
   .project-links a.primary-link { font-weight: 700; }
   .pending { color: var(--muted); font-style: italic; }
+  .directory-link { margin-top: 1.4rem; font-weight: 600; }
+  .lifecycle { display: flex; flex-wrap: wrap; gap: 0.4rem; list-style: none; margin: 0 0 1rem; padding: 0; }
+  .lifecycle li { background: var(--overlay); border-radius: 999px; color: var(--subtle); font-family: ui-monospace, Menlo, monospace; font-size: 0.72rem; padding: 0.1rem 0.55rem; }
+  .lifecycle li.experimental { color: var(--love); }
+  .recent-columns { display: grid; gap: 1.5rem; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
+  .recent-columns h3 { margin-top: 0; }
+  .recent-columns ul { padding-left: 1.2rem; }
+  .recent-columns li { margin-bottom: 0.6rem; }
+  .recent-columns .mono { display: block; font-size: 0.78rem; }
   .more-projects { padding-left: 1.4rem; }
   .more-projects li { margin-bottom: 0.55rem; color: var(--subtle); }
   .more-projects li::marker { content: "\273F  "; color: var(--love); }
@@ -102,6 +119,8 @@
   .copy { background: var(--surface); border: 1px solid var(--hl-med); color: var(--subtle); border-radius: 3px; font-size: 0.72rem; cursor: pointer; }
   .copy:hover { color: var(--text); border-color: var(--rose); }
   .content { max-width: 70ch; }
+  .summary { color: var(--subtle); }
+  .index-list li { margin-bottom: 0.8rem; }
   .content pre { padding: 0.8rem; }
   .content code { background: var(--overlay); border-radius: 3px; padding: 0.05rem 0.2rem; }
   .content pre code { padding: 0; background: transparent; }
@@ -110,4 +129,20 @@
   .content li { margin: 0.35rem 0; }
   .tool { border-top: 1px solid var(--hl-med); padding-top: 1.2rem; margin-top: 1.2rem; }
   .tool h2 { margin-bottom: 0.3rem; }
-  footer { color: var(--muted); font-size: 0.88rem; margin-top: 3.5rem; font-style: italic; text-align: center; }
+  .release-heading { display: flex; justify-content: space-between; gap: 1rem; align-items: baseline; }
+  .build-grid { display: grid; gap: 1rem; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
+  .build { border: 1px solid var(--hl-med); border-radius: 4px; padding: 1rem; }
+  .build h4 { margin-top: 0; }
+  .download-links { display: flex; flex-wrap: wrap; gap: 1rem; }
+  footer { color: var(--muted); font-size: 0.88rem; margin-top: 3.5rem; text-align: center; }
+  footer nav { display: flex; flex-wrap: wrap; gap: 0.4rem 1.1rem; justify-content: center; }
+  @media (max-width: 560px) {
+    body { padding-top: 1.5rem; }
+    .masthead { align-items: flex-start; }
+    .identity { align-items: flex-start; gap: 0.8rem; }
+    .portrait { width: 64px; height: 64px; }
+    h1 { font-size: 1.85rem; }
+    h1 small { display: block; font-size: 1rem; }
+    .profile-links, .primary-nav { gap: 0.55rem 1rem; }
+    .projects { grid-template-columns: 1fr; }
+  }

@@ -1,22 +1,36 @@
 [site]
 domain = "averagechris.srht.site"
 title = "~averagechris"
-name = "Chris"
+name = "Chris Cummings"
+description = "Chris Cummings's personal workshop, software, notes, and guides."
 tagline = "computers · gardens · bicycles — Los Angeles"
 portrait = "portrait.jpg"
-about = """
-I'm Chris. I like computer nerd stuff, gardening, and riding bikes. \
-Based in Los Angeles. I host my personal open source projects on \
-SourceHut and publish prebuilt binaries here."""
+featured_projects = ["dotfiles", "gander", "sideshow", "workctl", "rdny"]
 
-[[site.links]]
+[[site.profile_links]]
 label = "sourcehut"
 url = "https://sr.ht/~averagechris/"
 
-[[site.links]]
-label = "git"
-url = "https://git.sr.ht/~averagechris/"
+[[site.profile_links]]
+label = "github"
+url = "https://github.com/averagechris"
 
-[[site.links]]
-label = "issues"
-url = "https://todo.sr.ht/~averagechris/projects"
+[[site.profile_links]]
+label = "bluesky"
+url = "https://bsky.app/profile/averagechris.bsky.social"
+
+[[site.utility_links]]
+label = "site source"
+url = "https://git.sr.ht/~averagechris/averagechris.srht.site"
+
+[[site.utility_links]]
+label = "site issues"
+url = "https://todo.sr.ht/~averagechris/projects?search=label%3A%22repo%3Aaveragechris.srht.site%22"
+
+[[site.utility_links]]
+label = "keys"
+url = "/keys/"
+
+[[site.utility_links]]
+label = "fleet"
+url = "/fleet/"

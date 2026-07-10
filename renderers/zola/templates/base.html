@@ -4,10 +4,10 @@
   {{ ui::head(title=current.title, desc=current.description, url=current.extra.canonical, portrait=data.site.portrait | default(value=""), home=current.extra.home | default(value=false)) }}
 </head>
 <body>{% if not current.extra.home | default(value=false) %}
-  {{ ui::masthead() }}
+  {{ ui::masthead(nav=data.primary_nav) }}
 {% endif %}
 {% block content %}{% endblock content %}
-  {{ ui::footer() }}
+  {{ ui::footer(links=data.site.utility_links) }}
   {{ ui::body_script(x=current.extra) }}
 </body>
 </html>

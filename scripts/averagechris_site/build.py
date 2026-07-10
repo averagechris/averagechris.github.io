@@ -115,7 +115,14 @@ def main() -> None:
     args = parser.parse_args()
     repo = repo_root()
     loaded = load_site_data(repo)
-    config = {"site": dict(loaded.site), "projects": loaded.projects, "pages": loaded.pages, "notes": loaded.notes, "wiki": loaded.wiki}
+    config = {
+        "site": dict(loaded.site),
+        "home_body": loaded.home_body,
+        "projects": loaded.projects,
+        "pages": loaded.pages,
+        "notes": loaded.notes,
+        "wiki": loaded.wiki,
+    }
     site = config["site"]
     domain = args.domain or site["domain"]
     base_url = f"https://{domain}"
