@@ -1,0 +1,7 @@
+slug = "rewrite-became-an-index"
+title = "CHRIS: The rewrite got fast when it became an index"
+description = "Draft outline about separating language-level speedups from gains caused by better data layout and candidate selection."
+date = "2026-07-12"
+listed = false
+draft = true
+body_format = "markdown"

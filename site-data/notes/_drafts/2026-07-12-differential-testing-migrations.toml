@@ -1,0 +1,7 @@
+slug = "differential-testing-migrations"
+title = "CHRIS: Differential testing as a migration strategy"
+description = "Draft outline about using an existing implementation as an executable oracle during runtime and language migrations."
+date = "2026-07-12"
+listed = false
+draft = true
+body_format = "markdown"

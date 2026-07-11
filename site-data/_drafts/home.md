@@ -1,20 +1,5 @@
-# Homepage introduction outline
+I'm Chris Cummings. I'm a programming nerd, social person, and longtime beverage enthusiast living in Los Angeles. My truest hobby is learning, which means I collect interests, get way too deep into them, and eventually find another one.
 
-## Purpose and reader
+I build tools because I get annoyed when there isn't a good way to do something to my exact specification. I also strongly prefer open source, with my begrudging iPhone ownership sitting there as the obvious exception. Everything here comes out of software and systems I actually use.
 
-- Purpose: briefly orient a first-time visitor before selected work and recent publishing.
-- Reader: a technically curious friend or colleague who may not know Chris yet.
-
-## Known facts
-
-- Public name: Chris Cummings.
-- Site identity: `~averagechris`.
-- The currently published introduction remains canonical in `site-data/home.md`.
-
-## Draft prompts
-
-CHRIS: What should a visitor know about you in the first sentence?
-
-CHRIS: Which current interests belong here without turning this into a résumé?
-
-CHRIS: What should lead naturally into the selected software below?
+Briefly, I cosplayed as a tech boy -> farmer during the main covid era. These days I tend a growing collection of houseplants because I like beauty and having something to care for. I ride bikes for practicality and pleasure, read, make new friends, and keep multiple beverages on my desk at all times.

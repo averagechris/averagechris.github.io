@@ -1,0 +1,7 @@
+slug = "replacing-polling"
+title = "CHRIS: Replacing polling without losing the breadcrumbs"
+description = "Draft outline about moving from fixed polling to event-driven watches without weakening timeout and diagnostic behavior."
+date = "2026-07-12"
+listed = false
+draft = true
+body_format = "markdown"

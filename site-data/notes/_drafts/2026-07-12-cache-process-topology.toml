@@ -1,0 +1,7 @@
+slug = "cache-process-topology"
+title = "CHRIS: A cache has a process topology"
+description = "Draft outline about cache placement, retained data, worker replication, and memory sharing."
+date = "2026-07-12"
+listed = false
+draft = true
+body_format = "markdown"

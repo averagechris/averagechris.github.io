@@ -1,7 +1,7 @@
 slug = "now"
 title = "Now"
 description = "Current notes from Chris."
-date = "2026-07-05"
+date = "2026-07-12"
 listed = false
 draft = true
 body_format = "markdown"

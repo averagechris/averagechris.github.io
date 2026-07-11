@@ -1,11 +1,7 @@
-## Current focus
+At work, I've been doing a lot of deep performance work. I keep getting reminded that the first explanation is usually wrong. I've been measuring startup, tests, requests, and process shutdown separately. I've also been reducing repeated database work, moving initialization to better points in the lifecycle, and rethinking cache placement and data layout. The recurring lesson is simple: the biggest gains often come from changing when and where work happens. They don't always come from a clever micro-optimization or rewriting something in a faster language.
 
-CHRIS: Name one specific software focus that is taking your attention now.
+Outside work, I've been turning this site from a release dashboard into an actual personal workshop, continuing to push gander, sideshow, and rdny through daily use, and figuring out whether workctl's model for delegated development is genuinely useful or merely interesting.
 
-## Away from the computer
+Away from the computer, I watched the new vampire season of Dimension 20 on Dropout and it ruled. I've also been biking to the grocery store and noticing more people doing the same. We end up chatting about racks while loading groceries onto our bikes, which has been fun. I'm using dual panniers right now, but I want a low front rack over the wheel... not a basket. I push my bike's weight limit to the max, lol.
 
-CHRIS: Add one current non-computer detail.
-
-## Since the last update (optional)
-
-CHRIS: Note what changed since the previous Now entry, if that context helps.
+The current mood is building way too many things. I'm in a code cave for the first time in a long time, and for the first time in the agentic era. It reminds me of when I used to grind out hand-written code: working too hard, getting crusty and disheveled, but enjoying the feeling of being completely locked in.
