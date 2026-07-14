@@ -9,10 +9,14 @@ environment:
 sources:
   - https://git.sr.ht/~averagechris/averagechris.srht.site
 tasks:
-  - publish: |
+  - validate: |
       cd averagechris.srht.site
-      nix run .#build-pages
-      nix run .#publish-pages
+      nix develop --command env PYTHONPATH=scripts python3 -m averagechris_site.data --check
+      nix develop --command env PYTHONPATH=scripts python3 -m unittest discover -s tests -v
+      nix build --no-link .#checks.x86_64-linux.web-game-preset
+  - publish-race-safe: |
+      cd averagechris.srht.site
+      nix run .#refresh-pages -- --force
 submitter:
   git.sr.ht:
     enabled: true

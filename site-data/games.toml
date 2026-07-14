@@ -1,0 +1,12 @@
+# Canonical browser-game registry. Each release owns /games/<slug>/ by shipping
+# a <artifact_prefix>-vX.Y.Z-web.tar.gz and matching .sha256 tag artifact.
+
+[[games]]
+slug = "palabra"
+name = "Palabra"
+description = "A small word game for the browser."
+repo = "https://git.sr.ht/~averagechris/palabra"
+srht_repo = "palabra"
+artifact_prefix = "palabra"
+entrypoint = "index.html"
+listed = true

@@ -32,6 +32,8 @@
       pname,
       changelog ? "CHANGELOG.md",
       manifestPath ? "builds/release-linux-x86_64.yml",
+      artifactSuffix ? "x86_64-linux",
+      requireManifestReplacement ? false,
       setVersion,
       verify ? null,
       runtimeInputs ? [],
@@ -54,7 +56,11 @@
           done
           export ALLOW_DOWNGRADE="$allow_downgrade"
           ${setVersion}
-          VERSION="$version" PNAME=${q pname} CHANGELOG=${q changelog} MANIFEST_PATH=${q manifestPath} python3 - <<'PY'
+          VERSION="$version" PNAME=${q pname} CHANGELOG=${q changelog} MANIFEST_PATH=${q manifestPath} ARTIFACT_SUFFIX=${q artifactSuffix} STRICT_MANIFEST=${
+            if requireManifestReplacement
+            then "1"
+            else "0"
+          } python3 - <<'PY'
           from pathlib import Path
           import datetime, os, re
           version = os.environ["VERSION"]
@@ -64,7 +70,10 @@
           manifest = Path(os.environ["MANIFEST_PATH"])
           if manifest.exists():
               p = re.escape(os.environ["PNAME"])
-              manifest.write_text(re.sub(rf"{p}-v\d+\.\d+\.\d+-x86_64-linux\.tar\.gz", f"{os.environ['PNAME']}-v{version}-x86_64-linux.tar.gz", manifest.read_text()))
+              suffix = re.escape(os.environ["ARTIFACT_SUFFIX"])
+              updated, count = re.subn(rf"{p}-v\d+\.\d+\.\d+-{suffix}\.tar\.gz", f"{os.environ['PNAME']}-v{version}-{os.environ['ARTIFACT_SUFFIX']}.tar.gz", manifest.read_text())
+              if os.environ["STRICT_MANIFEST"] == "1" and count < 1: raise SystemExit(f"expected a release artifact in {manifest}, found none")
+              manifest.write_text(updated)
           changelog = Path(os.environ["CHANGELOG"])
           content = changelog.read_text() if changelog.exists() else "# Changelog\n\n## Unreleased\n"
           if not content.startswith("# Changelog"): content = "# Changelog\n\n" + content
@@ -85,8 +94,14 @@
       pkgs,
       pname,
       versionFile ? "Cargo.toml",
-      versionExpr,
-    }:
+      versionExpr ? null,
+      versionCommand ? null,
+    }: let
+      readVersion =
+        if versionCommand != null
+        then versionCommand
+        else ''VERSION_FILE=${q versionFile} python3 -c 'import os,tomllib; data=tomllib.load(open(os.environ["VERSION_FILE"],"rb")); v=${versionExpr}; assert isinstance(v,str) and v; print(v)' '';
+    in
       pkgs.writeShellApplication {
         name = "release-tag";
         runtimeInputs = with pkgs; [git jujutsu python3];
@@ -94,7 +109,7 @@
           set -euo pipefail
           revision="@"; while [[ $# -gt 0 ]]; do case "$1" in --revision) revision="$2"; shift 2;; -h|--help) printf 'usage: release-tag [--revision REV]\n'; exit 0;; *) printf 'unknown argument: %s\n' "$1" >&2; exit 1;; esac; done
           repo_root="$(git rev-parse --show-toplevel 2>/dev/null || jj root)"; cd "$repo_root"
-          version="$(VERSION_FILE=${q versionFile} python3 -c 'import os,tomllib; data=tomllib.load(open(os.environ["VERSION_FILE"],"rb")); v=${versionExpr}; assert isinstance(v,str) and v; print(v)')"
+          version="$(${readVersion})"
           [[ "$version" =~ ^v?[0-9]+\.[0-9]+\.[0-9]+$ ]] || { printf 'version must be semver\n' >&2; exit 1; }
           tag="v''${version#v}"
           # An empty jj working copy is never the release target; tag its
@@ -160,15 +175,22 @@
       pname,
       srhtRepo ? pname,
       versionFile ? "Cargo.toml",
-      versionExpr,
+      versionExpr ? null,
+      versionCommand ? null,
       refreshTrigger,
       prepareRelease,
       releaseTag,
       ciApps ? [],
       artifactPackage,
       linuxManifest ? "builds/release-linux-x86_64.yml",
+      allowLinuxBuild ? true,
+      validateAfterPrepare ? false,
       runtimeInputs ? [],
     }: let
+      readVersion =
+        if versionCommand != null
+        then versionCommand
+        else ''VERSION_FILE=${q versionFile} python3 -c 'import os,tomllib; data=tomllib.load(open(os.environ["VERSION_FILE"],"rb")); print(${versionExpr})' '';
       validateScript =
         if ciApps == []
         then "true"
@@ -182,7 +204,14 @@
           srht() { nix run 'git+https://git.sr.ht/~averagechris/srht' -- "$@"; }
           version=""; revision="@"; validate=1; tag_release=1; build_artifact=1; upload_artifact=1; submit_refresh=1; submit_linux_build=0; allow_downgrade=0; linux_manifest=${q linuxManifest}
           while [[ $# -gt 0 ]]; do case "$1" in --version) version="$2"; shift 2;; --revision) revision="$2"; shift 2;; --allow-downgrade) allow_downgrade=1; shift;; --skip-validate) validate=0; shift;; --skip-tag) tag_release=0; shift;; --skip-artifact) build_artifact=0; shift;; --skip-upload) upload_artifact=0; shift;; --skip-refresh) submit_refresh=0; shift;; --submit-linux-build) submit_linux_build=1; shift;; -h|--help) printf 'usage: release [--version X.Y.Z] [--allow-downgrade] [--submit-linux-build] [--skip-*]\n'; exit 0;; *) printf 'unknown argument: %s\n' "$1" >&2; exit 1;; esac; done
-          if [[ $validate -eq 1 ]]; then
+          ${lib.optionalString (!allowLinuxBuild) ''
+            if [[ $submit_linux_build -eq 1 ]]; then printf '%s\n' '--submit-linux-build is not valid for a platform-neutral web-game release' >&2; exit 2; fi
+          ''}
+          if [[ $validate -eq 1 && ${
+            if validateAfterPrepare
+            then "0"
+            else "1"
+          } -eq 1 ]]; then
             (
               export TERM=dumb
               ${validateScript}
@@ -193,7 +222,17 @@
           on_exit() { status=$?; if [[ $status -ne 0 && $mutated -eq 1 ]]; then recovery_note; fi; exit "$status"; }
           trap on_exit EXIT
           args=(); [[ -n "$version" ]] && args+=(--version "$version"); [[ $allow_downgrade -eq 1 ]] && args+=(--allow-downgrade); nix run .#prepare-release -- "''${args[@]}"; mutated=1
-          version="$(VERSION_FILE=${q versionFile} python3 -c 'import os,tomllib; data=tomllib.load(open(os.environ["VERSION_FILE"],"rb")); print(${versionExpr})')"; tag="v''${version#v}"
+          if [[ $validate -eq 1 && ${
+            if validateAfterPrepare
+            then "1"
+            else "0"
+          } -eq 1 ]]; then
+            (
+              export TERM=dumb
+              ${validateScript}
+            ) < /dev/null
+          fi
+          version="$(${readVersion})"; tag="v''${version#v}"
           # An empty jj working copy is never the release target: aim at its
           # parent (same semantics as `jj ship`) and never describe/tag it.
           if [[ -d .jj && "$revision" == "@" && "$(jj log -r @ --no-graph --color=never -T 'if(empty, "1", "0")')" == "1" ]]; then revision="@-"; fi
@@ -237,6 +276,31 @@
           tar --sort=name --format=ustar --mtime='@1' --owner=0 --group=0 --numeric-owner -C "$TMPDIR/stage" -cf - "${lib.removeSuffix ".tar.gz" artifactName}" | gzip -n > "$out/${artifactName}"
           (cd "$out" && sha256sum "${artifactName}" > "${artifactName}.sha256")
         '';
+
+    mkWebReleaseTarball = {
+      pkgs,
+      pname,
+      version,
+      webPackage,
+      entrypoint ? "index.html",
+    }: let
+      artifactName = "${pname}-v${version}-web.tar.gz";
+      stem = lib.removeSuffix ".tar.gz" artifactName;
+    in
+      pkgs.runCommand "${pname}-web-release-artifact-${version}" {nativeBuildInputs = with pkgs; [coreutils findutils gnutar gzip];} ''
+        stage="$TMPDIR/stage/${stem}"
+        mkdir -p "$out" "$stage"
+        cp -R --no-preserve=mode,ownership,timestamps ${webPackage}/. "$stage/"
+        [ -f "$stage/${entrypoint}" ] || { printf 'web bundle entrypoint missing: %s\n' ${q entrypoint} >&2; exit 1; }
+        if [[ -n "$(find "$stage" -type l -print -quit)" ]]; then
+          printf 'web bundle must not contain symlinks\n' >&2
+          exit 1
+        fi
+        find "$stage" -type d -exec chmod 0755 {} +
+        find "$stage" -type f -exec chmod 0644 {} +
+        tar --sort=name --format=posix --pax-option=delete=atime,delete=ctime --mtime='@1' --owner=0 --group=0 --numeric-owner -C "$TMPDIR/stage" -cf - ${q stem} | gzip -n > "$out/${artifactName}"
+        (cd "$out" && sha256sum "${artifactName}" > "${artifactName}.sha256")
+      '';
   };
 
   presets.rust = args @ {
@@ -385,6 +449,116 @@
       static-checks = app staticChecks;
       ci-test = app ciTest;
     };
+    inherit releaseArtifact;
+  };
+
+  # Ecosystem-neutral browser-game preset. The caller owns its package manager,
+  # build, and CI derivations; this preset owns JSON semver release mechanics.
+  presets.webGame = {
+    pkgs,
+    self,
+    pname,
+    webPackage,
+    subdir ? pname,
+    srhtRepo ? pname,
+    versionFile ? "package.json",
+    changelog ? "CHANGELOG.md",
+    manifestPath ? "builds/release-web.yml",
+    entrypoint ? "index.html",
+    ciFmt ? null,
+    ciTest ? null,
+    ciCheck ? null,
+    prepareVerify ? null,
+    extraStaticChecks ? [],
+    ...
+  }: let
+    packageJson = builtins.fromJSON (builtins.readFile (self + "/${versionFile}"));
+    version = packageJson.version or (throw "${versionFile} must contain a version string");
+    checkedVersion =
+      if builtins.isString version && builtins.match "[0-9]+\\.[0-9]+\\.[0-9]+" version != null
+      then version
+      else throw "${versionFile} version must be X.Y.Z semver";
+    versionCommand = ''VERSION_FILE=${q versionFile} python3 -c 'import json,os; value=json.load(open(os.environ["VERSION_FILE"])).get("version"); assert isinstance(value,str) and value; print(value)' '';
+    setJsonVersion = ''
+      VERSION="$version" VERSION_FILE=${q versionFile} python3 - <<'PY'
+      from pathlib import Path
+      import json, os, re, sys
+      path = Path(os.environ["VERSION_FILE"])
+      data = json.loads(path.read_text())
+      current = data.get("version")
+      requested = os.environ["VERSION"] or current
+      def semver(value):
+          if not isinstance(value, str) or not re.fullmatch(r"v?\d+\.\d+\.\d+", value):
+              raise SystemExit(f"invalid semver version: {value}")
+          return tuple(int(part) for part in value.removeprefix("v").split("."))
+      current_tuple, requested_tuple = semver(current), semver(requested)
+      if requested_tuple < current_tuple and os.environ.get("ALLOW_DOWNGRADE") != "1":
+          raise SystemExit(f"refusing version downgrade: requested {requested.removeprefix('v')} is lower than current {current.removeprefix('v')} (pass --allow-downgrade to override)")
+      if requested_tuple == current_tuple:
+          print(f"prepare-release: requested version {requested.removeprefix('v')} matches current version", file=sys.stderr)
+      data["version"] = requested.removeprefix("v")
+      path.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n")
+      print(data["version"])
+      PY
+      version="$(${versionCommand})"
+    '';
+    releaseArtifact = core.mkWebReleaseTarball {
+      inherit pkgs pname webPackage entrypoint;
+      version = checkedVersion;
+    };
+    ciWeb = pkgs.writeShellApplication {
+      name = "ci-web";
+      runtimeInputs = with pkgs; [coreutils];
+      text = ''
+        set -euo pipefail
+        [ -f "${webPackage}/${entrypoint}" ] || { printf 'web bundle entrypoint missing: %s\n' ${q entrypoint} >&2; exit 1; }
+        artifacts=(${releaseArtifact}/*-web.tar.gz)
+        [[ ''${#artifacts[@]} -eq 1 && -f "''${artifacts[0]}" && -f "''${artifacts[0]}.sha256" ]] || { printf 'expected exactly one web release artifact and checksum\n' >&2; exit 1; }
+        (cd ${releaseArtifact} && sha256sum -c "$(basename "''${artifacts[0]}").sha256")
+      '';
+    };
+    prepareRelease = core.mkPrepareRelease {
+      inherit pkgs pname changelog manifestPath;
+      artifactSuffix = "web";
+      requireManifestReplacement = true;
+      setVersion = setJsonVersion;
+      verify = prepareVerify;
+      runtimeInputs = lib.optionals (prepareVerify != null) [pkgs.nix];
+    };
+    releaseTag = core.mkReleaseTag {inherit pkgs pname versionFile versionCommand;};
+    refreshTrigger = core.mkRefreshTriggerManifest {inherit pname subdir;};
+    namedCi = lib.filterAttrs (_: drv: drv != null) {
+      ci-fmt = ciFmt;
+      ci-test = ciTest;
+      ci-check = ciCheck;
+    };
+    release = core.mkRelease {
+      inherit pkgs pname srhtRepo versionFile versionCommand refreshTrigger prepareRelease releaseTag;
+      artifactPackage = releaseArtifact;
+      allowLinuxBuild = false;
+      validateAfterPrepare = true;
+      ciApps = builtins.attrNames namedCi ++ ["ci-web"];
+    };
+    staticChecks = pkgs.writeShellApplication {
+      name = "static-checks";
+      text = let
+        checks = lib.filter (drv: drv != null) [ciFmt ciCheck] ++ extraStaticChecks;
+      in
+        if checks == []
+        then "true"
+        else lib.concatMapStringsSep "\n" (drv: lib.getExe drv) checks;
+    };
+  in {
+    packages.release-artifact = releaseArtifact;
+    apps =
+      lib.mapAttrs (_: drv: app drv) namedCi
+      // {
+        prepare-release = app prepareRelease;
+        release-tag = app releaseTag;
+        release = app release;
+        ci-web = app ciWeb;
+        static-checks = app staticChecks;
+      };
     inherit releaseArtifact;
   };
 in {

@@ -30,6 +30,26 @@
         pkgs = nixpkgs.legacyPackages.${system};
         srhtPackage = srht.packages.${system}.srht;
         python = pkgs.python3;
+        webGameFixtureWeb = pkgs.runCommand "web-game-fixture-web" {} ''
+          mkdir -p "$out/assets"
+          printf '<!doctype html><title>fixture</title>\n' > "$out/index.html"
+          printf 'fixture\n' > "$out/assets/game.js"
+        '';
+        webGameFixtureCi = name:
+          pkgs.writeShellApplication {
+            inherit name;
+            text = "true";
+          };
+        webGameFixture = self.lib.fleet.presets.webGame {
+          inherit pkgs;
+          self = ./tests/fixtures/web-game;
+          pname = "web-game-fixture";
+          webPackage = webGameFixtureWeb;
+          ciFmt = webGameFixtureCi "fixture-fmt";
+          ciTest = webGameFixtureCi "fixture-test";
+          ciCheck = webGameFixtureCi "fixture-check";
+          prepareVerify = null;
+        };
 
         mkApp = name: script: {
           type = "app";
@@ -189,6 +209,36 @@
             EOF
           '';
       in {
+        checks.web-game-preset = assert builtins.all (name: builtins.hasAttr name webGameFixture.apps) [
+          "prepare-release"
+          "release-tag"
+          "release"
+          "ci-fmt"
+          "ci-test"
+          "ci-check"
+          "ci-web"
+          "static-checks"
+        ];
+          pkgs.runCommand "check-web-game-preset" {
+            nativeBuildInputs = with pkgs; [coreutils gnugrep gnutar gzip python3];
+          } ''
+              cp -R ${./tests/fixtures/web-game} work
+              chmod -R u+w work
+              cd work
+            ${webGameFixture.apps.prepare-release.program} --version 1.2.4
+            python3 -c 'import json; assert json.load(open("package.json"))["version"] == "1.2.4"'
+            grep -q 'web-game-fixture-v1.2.4-web.tar.gz' builds/release-web.yml
+            grep -q '^## v1.2.4 - ' CHANGELOG.md
+            if ${webGameFixture.apps.prepare-release.program} --version 1.2.3; then
+              printf 'prepare-release unexpectedly allowed a downgrade\n' >&2
+              exit 1
+            fi
+              artifact=${webGameFixture.packages.release-artifact}
+              (cd "$artifact" && sha256sum -c web-game-fixture-v1.2.3-web.tar.gz.sha256)
+              tar -tzf "$artifact/web-game-fixture-v1.2.3-web.tar.gz" | grep -q '^web-game-fixture-v1.2.3-web/index.html$'
+              touch "$out"
+          '';
+
         apps = {
           build-pages = {
             type = "app";

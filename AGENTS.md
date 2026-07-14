@@ -49,6 +49,13 @@ Shared release helpers live under `lib.fleet.core`; Rust repos use
 `lib.fleet.presets.rust` via the backward-compatible `lib.mkFleetApps` alias.
 The preset accepts `ciExtraInputs` for extra PATH packages in the ci-* apps
 (e.g. ctx needs python3 because its CLI tests spawn plugin helpers).
+Browser games use ecosystem-neutral `lib.fleet.presets.webGame`, provide their
+own `ciFmt`/`ciTest`/`ciCheck` derivations, expose an additional `ci-web` gate,
+and publish one deterministic `-web.tar.gz` plus checksum. The preset defaults
+to JSON versioning in `package.json` and has no Rust/Cargo assumptions. Do not use
+`--submit-linux-build` for a web game. Games enroll in `site-data/games.toml`;
+their verified extracted bundle owns `/games/<slug>/`, while this repo alone
+owns and publishes the enclosing site and `/games/` index.
 
 Fleet Nix formatting standard: use Alejandra through a quiet wrapper (`alejandra
 -q`, defaulting no-arg `nix fmt` to formatting `.`). New scaffolds should expose
@@ -168,6 +175,8 @@ If main moved since the workspace was created, `jj rebase -s <change-id> -d main
 - Add a project: `nix run .#add-project -- <path> --description "..." [--no-downloads] [--tier more]`
 - Republish: push to this repo (CI does it) or `nix run .#build-pages && nix run .#publish-pages`
 - Fleet project pages are rendered here from git.sr.ht tags, tag artifacts, and docs fetched from pinned main SHAs.
+- Browser games are resolved from the newest semver tag, checksum-verified,
+  safely extracted from immutable cache, and fingerprinted in `state.games`.
 - Per-repo `build-pages`/`publish-pages` apps may still exist during migration, but this repo is the sole Pages publisher.
 - **Website apps (`build-pages`/`publish-pages`/`refresh-pages`/`serve`) are
   excluded from `.#flake-output-cache`**, so their writeShellApplication

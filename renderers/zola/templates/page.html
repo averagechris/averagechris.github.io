@@ -13,6 +13,17 @@
 {% for note in data.notes %}    <li><span class="muted mono">{{ note.date }}</span> — <a href="/notes/{{ note.slug }}/">{{ note.title }}</a></li>
 {% endfor %}    </ul>
   </main>
+{% elif page.extra.kind == "games_index" %}
+  <main class="content">
+    <h1>Games</h1>
+    <p>Small browser games, released as verified static bundles.</p>
+    <div class="project-grid">{% for game in data.games %}
+      <article class="project-card"><h2>{{ game.name }}{% if game.version %} <span class="version">{{ game.version }}</span>{% endif %}</h2>
+        <p>{{ game.description }}</p>
+        <p class="project-links">{% if game.published %}<a class="primary-link" href="{{ game.play_url }}">play</a>{% else %}<span class="muted">release pending</span>{% endif %} <a href="{{ game.repo }}">source</a></p>
+      </article>{% endfor %}
+    </div>
+  </main>
 {% elif page.extra.kind == "wiki_index" %}
   <main class="content">
     <h1>Wiki</h1>

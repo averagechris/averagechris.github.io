@@ -10,6 +10,38 @@ release flow is built from composable `lib.fleet.core` helpers, creates
 annotated tags, uploads release tarballs as sr.ht tag artifacts, and submits a
 SourceHut build that runs this site's `refresh-pages` publisher.
 
+Browser-game repositories use ecosystem-neutral `lib.fleet.presets.webGame`.
+It reads and stamps `version` in `package.json`, accepts the caller's own CI
+derivations, and emits one platform-neutral `<name>-vX.Y.Z-web.tar.gz` plus
+`.sha256`. Pass the derivation whose root is the finished static site as
+`webPackage`; there are no Cargo, Rust, Node, pnpm, or Vite assumptions inside
+the preset. `--submit-linux-build` is intentionally rejected.
+
+Palabra's flake-parts `perSystem` interface is:
+
+```nix
+let
+  game = fleet.lib.fleet.presets.webGame {
+    inherit pkgs self;
+    pname = "palabra";
+    subdir = "games/palabra";
+    srhtRepo = "palabra";
+    # Palabra owns these pnpm/Vite derivations. The preset only consumes them.
+    webPackage = config.packages.web; # dist copied to $out; index.html at root
+    ciFmt = config.packages.ci-fmt;
+    ciTest = config.packages.ci-test;
+    ciCheck = config.packages.ci-typecheck;
+  };
+in {
+  packages = game.packages;
+  apps = game.apps;
+}
+```
+
+This exposes derivation `packages.release-artifact` and apps `prepare-release`,
+`release-tag`, `release`, `ci-fmt`, `ci-test`, `ci-check`, `ci-web`, and
+`static-checks`. Omit any caller CI derivation that Palabra does not need.
+
 The root homepage for <https://averagechris.srht.site/>: an about-me plus a
 directory of my projects, each linking to its downloads page at
 `https://averagechris.srht.site/<project>/`.
@@ -52,6 +84,47 @@ nix run .#serve            # pages-alike local server (live Pages CSP/MIME/404) 
 nix run .#publish-pages
 ```
 
+Games are enrolled manually in checked `site-data/games.toml`. The central
+publisher resolves the newest semver tag, verifies and safely extracts its web
+artifact, and gives the extracted bundle ownership of `/games/<slug>/`.
+`/games/` itself and its navigation entry remain site-owned.
+
+One-time SourceHut setup for a game repository is still manual: create the repo,
+allow the release identity to upload git artifacts (`OBJECTS:RW` plus repository
+read grants), and allow its release job to submit the refresh build with secrets
+(`builds.sr.ht/JOBS:RW`, `SECRETS:RO`, and profile read). The submitted refresh
+manifest carries `pages.sr.ht/PAGES:RW`; it must always be submitted with
+`--secrets`. No game repository receives direct Pages publication authority.
+The standard `release` app uploads the web tarball and checksum before invoking
+the reusable `lib.fleet.core.mkRefreshTriggerManifest` fragment, so the refresh
+job's tag-and-artifact wait is the synchronization contract.
+
+For fully tag-triggered SourceHut automation, `builds/release-web.yml` in the
+game repository must use this ordering:
+
+1. Run `nix run .#ci-web` and
+   `nix build .#release-artifact --out-link result-release-artifact`.
+2. Copy `result-release-artifact/<slug>-vX.Y.Z-web.tar.gz` and its `.sha256`
+   into stable paths in the build user's home. They may also be listed under
+   the build manifest's `artifacts` key for job diagnostics, but those
+   short-lived build artifacts are not the release source.
+3. Derive `tag=v$(node -p 'require("./package.json").version')`, verify that
+   the checked-out commit is that tag, and upload both files as durable git tag artifacts with
+   `srht git artifact upload -r <repo> --rev "$tag" ...`.
+4. Only after both uploads succeed, submit the central refresh manifest with
+   `TRIGGER_PROJECT=games/<slug>`, `TRIGGER_TAG=$tag`, and
+   `TRIGGER_SHA=$(git rev-parse HEAD)`. The manifest runs
+   `nix run .#refresh-pages` from this site repository and must be submitted
+   with `srht builds submit --secrets`.
+
+The release manifest needs the git artifact and build submission OAuth grants
+listed above. Configure the repository's tag webhook/trigger for `refs/tags/v*`
+to submit that manifest. `prepare-release` keeps the versioned artifact names in
+the checked-in manifest synchronized with `package.json`; the fixture at
+`tests/fixtures/web-game/builds/release-web.yml` demonstrates the field that is
+stamped. Projects using the standard `release` app do not need a second
+tag-triggered release job—the app performs the same build/upload/refresh order.
+
 `new-project` writes public `.averagechris-project.toml` metadata but does not
 edit this site's `fleet.toml` or `site-data/projects.toml`; site enrollment is a manual
 follow-up for now. It also documents the shared SourceHut tracker
@@ -75,6 +148,7 @@ only when the durable sources changed.
 
 - `site-data/site.toml` — site metadata (about, links, domain)
 - `site-data/projects.toml` — project registry; fleet release mechanics stay in `fleet.toml`
+- `site-data/games.toml` — browser-game registry and immutable web artifact contract
 - `site-data/pages/` — root-owned page TOML sidecars + Markdown/HTML bodies rendered to `/<slug>/`
 - `site-data/notes/` — published note TOML sidecars + bodies rendered to `/notes/<slug>/`
 - `site-data/notes/_drafts/` — unpublished note drafts; the checked loader refuses to publish them

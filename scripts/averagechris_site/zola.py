@@ -88,6 +88,7 @@ def build_template_data(config: dict, base_url: str, fleet_json: dict) -> dict:
     project_pages = dict(fleet_json.get("project_pages", {}))
     dates = dict(fleet_json.get("release_dates", {}))
     notes = published_notes(config)
+    games = [game for game in fleet_json.get("games", []) if game.get("listed", True)]
     wiki_pages = list(fleet_json.get("wiki", [])) or published_wiki(config)
     site_wiki = [w for w in wiki_pages if w.get("source") == "site"]
     project_wiki = {}
@@ -150,7 +151,7 @@ def build_template_data(config: dict, base_url: str, fleet_json: dict) -> dict:
             install = f"curl -LO {base_url}/{project['pages_subdir']}/downloads/{latest_art['name']}\nsha256sum -c {latest_art['name']}.sha256\ntar -xzf {latest_art['name']}\n{installs}"
         downloads.append({"path": path, "project": project, "info": info, "page_links": [{"label": p.removesuffix(".html"), "url": p} for p in info.get("docs", []) if p in DOC_PAGES], "releases": releases, "whats_new": info.get("changelog", {}).get(info["tag"], "No changelog entry found."), "previous": [{"tag": t, "body": info.get("changelog", {}).get(t, "")} for t in info.get("versions", [])[1:3] if info.get("changelog", {}).get(t)], "install": install})
 
-    return {"base_url": base_url, "site": site, "content_pages": content_pages, "now": now, "nav_pages": nav_pages, "notes": notes, "wiki": wiki_pages, "site_wiki": site_wiki, "project_wiki": [project_wiki[k] for k in sorted(project_wiki)], "projects": projects, "downloads": downloads, "has_keys": any(p["slug"] == "keys" for p in content_pages)}
+    return {"base_url": base_url, "site": site, "content_pages": content_pages, "now": now, "nav_pages": nav_pages, "notes": notes, "games": games, "wiki": wiki_pages, "site_wiki": site_wiki, "project_wiki": [project_wiki[k] for k in sorted(project_wiki)], "projects": projects, "downloads": downloads, "has_keys": any(p["slug"] == "keys" for p in content_pages)}
 
 
 def toml_string(value: str) -> str:
@@ -203,6 +204,8 @@ def render_zola_site(repo: pathlib.Path, config: dict, site_dir: pathlib.Path, b
             write_page(content, "/notes/", "Notes · ~averagechris", data["site"]["description"], f"{base_url}/notes/", kind="notes_index")
             for note in data["notes"]:
                 write_page(content, f"/notes/{note['slug']}/", f"{note['title']} · ~averagechris", data["site"]["description"], f"{base_url}/notes/{note['slug']}/", kind="note", body=note["body"], extra={"slug": note["slug"], "body_format": note["body_format"]})
+        if data["games"]:
+            write_page(content, "/games/", "Games · ~averagechris", data["site"]["description"], f"{base_url}/games/", kind="games_index")
         if data["wiki"]:
             write_page(content, "/wiki/", "Wiki · ~averagechris", data["site"]["description"], f"{base_url}/wiki/", kind="wiki_index")
             for wiki in data["wiki"]:

@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import concurrent.futures
+import dataclasses
 import datetime as dt
 import hashlib
 import json
@@ -13,6 +14,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tarfile
 import tempfile
 import tomllib
 import urllib.parse
@@ -33,6 +35,9 @@ DOC_PAGES = (
     "sample-review.html",
 )
 MAX_DOC_BYTES = 2_000_000
+MAX_GAME_FILES = 10_000
+MAX_GAME_MEMBERS = 12_000
+MAX_GAME_BYTES = 256 * 1024 * 1024
 RELEASE_ARTIFACTS_HEADER = """# Cache of immutable release artifact sha256s (and known-absent artifacts on
 # older tags), updated automatically by build-pages. Safe to commit; CI reads
 # it as-is. Delete a line to force a refetch.
@@ -119,12 +124,13 @@ def ls_remote(srht_repo: str) -> tuple[dict[str, str], str]:
     if refs_json:
         try:
             entry = json.loads(pathlib.Path(refs_json).read_text()).get(srht_repo)
-        except Exception:
-            entry = None
-        if entry:
-            # refresh_pages hands off the refs from the build attempt's stable
-            # before fingerprint so this render skips duplicate ls-remote calls.
-            return dict(entry.get("tags", {})), entry.get("main_sha", "")
+        except (OSError, json.JSONDecodeError, AttributeError) as error:
+            fail(f"invalid FLEET_REFS_JSON {refs_json}: {error}")
+        if not isinstance(entry, dict) or not isinstance(entry.get("tags"), dict) or not isinstance(entry.get("main_sha"), str):
+            fail(f"FLEET_REFS_JSON has no valid pinned refs for {srht_repo}")
+        # refresh_pages hands off the refs from the build attempt's stable
+        # before fingerprint so this render skips duplicate ls-remote calls.
+        return dict(entry["tags"]), entry["main_sha"]
     # git's default UA gets tarpitted by sr.ht's anti-scraper defenses on
     # datacenter IPs just like python-urllib (observed as a silent 120s hang
     # in CI); send the same UA curl uses, and retry once since the tarpit
@@ -222,7 +228,7 @@ def artifact_cache_path(repo: pathlib.Path, name: str) -> pathlib.Path:
     return repo / ".cache" / "artifacts" / safe
 
 
-def download_artifact(repo: pathlib.Path, url: str, name: str, dest: pathlib.Path, *, soft: bool = False, sha256: str | None = None) -> bool:
+def download_artifact(repo: pathlib.Path, url: str, name: str, dest: pathlib.Path, *, soft: bool = False, sha256: str | None = None, cache_key: str | None = None) -> bool:
     """Copy a release artifact into place, verifying integrity against its sha256.
 
     A soft-failed fetch or a truncated/corrupt cache entry must never publish a
@@ -236,7 +242,7 @@ def download_artifact(repo: pathlib.Path, url: str, name: str, dest: pathlib.Pat
             return hashlib.sha256(data).hexdigest() == sha256
         return True
 
-    cache = artifact_cache_path(repo, name)
+    cache = artifact_cache_path(repo, cache_key or name)
     cache.parent.mkdir(parents=True, exist_ok=True)
     if cache.exists() and not valid(cache.read_bytes()):
         print(f"  warn: discarding invalid cached artifact {name}")
@@ -251,10 +257,121 @@ def download_artifact(repo: pathlib.Path, url: str, name: str, dest: pathlib.Pat
                 print(f"  warn: {message}; skipping")
                 return False
             fail(message)
-        cache.write_bytes(data)
+        with tempfile.NamedTemporaryFile(dir=cache.parent, delete=False) as staged:
+            staged.write(data)
+            staged_path = pathlib.Path(staged.name)
+        staged_path.replace(cache)
     dest.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(cache, dest)
+    if cache.resolve() != dest.resolve():
+        shutil.copy2(cache, dest)
     return True
+
+
+def parse_checksum(data: bytes, expected_name: str, source: str) -> str:
+    try:
+        fields = data.decode("ascii").strip().split()
+    except UnicodeDecodeError as error:
+        fail(f"{source}: checksum is not ASCII: {error}")
+    if not fields or len(fields) > 2 or not re.fullmatch(r"[0-9a-fA-F]{64}", fields[0]):
+        fail(f"{source}: expected a SHA-256 checksum")
+    if len(fields) > 1 and fields[-1].lstrip("*") != expected_name:
+        fail(f"{source}: checksum names {fields[-1]!r}, expected {expected_name!r}")
+    return fields[0].lower()
+
+
+def safe_extract_game(archive_path: pathlib.Path, destination: pathlib.Path, entrypoint: str) -> None:
+    """Extract a static game bundle without trusting archive paths or links.
+
+    Bundles may contain files directly or one conventional top-level archive
+    directory. That directory is stripped; all other nested asset structure is
+    preserved verbatim beneath the game's route.
+    """
+    with tarfile.open(archive_path, "r:*") as archive:
+        members = archive.getmembers()
+        if len(members) > MAX_GAME_MEMBERS:
+            fail(f"{archive_path.name}: game bundle exceeds {MAX_GAME_MEMBERS} archive members")
+        files = [member for member in members if member.isfile()]
+        if len(files) > MAX_GAME_FILES:
+            fail(f"{archive_path.name}: game bundle exceeds {MAX_GAME_FILES} files")
+        total = sum(member.size for member in files)
+        if total > MAX_GAME_BYTES:
+            fail(f"{archive_path.name}: game bundle exceeds {MAX_GAME_BYTES} extracted bytes")
+        raw_names: list[pathlib.PurePosixPath] = []
+        for member in members:
+            raw = pathlib.PurePosixPath(member.name)
+            if member.name.startswith("/") or not raw.parts or any(part in ("", ".", "..") for part in raw.parts):
+                fail(f"{archive_path.name}: unsafe archive path {member.name!r}")
+            if not (member.isfile() or member.isdir()):
+                fail(f"{archive_path.name}: links and special files are not allowed: {member.name!r}")
+            raw_names.append(raw)
+        entry = pathlib.PurePosixPath(entrypoint)
+        strip_root: str | None = None
+        if entry not in raw_names:
+            roots = {path.parts[0] for path in raw_names}
+            if len(roots) == 1:
+                candidate = next(iter(roots))
+                if pathlib.PurePosixPath(candidate) / entry in raw_names:
+                    strip_root = candidate
+        normalized: list[tuple[tarfile.TarInfo, pathlib.PurePosixPath]] = []
+        seen: set[pathlib.PurePosixPath] = set()
+        for member, raw in zip(members, raw_names, strict=True):
+            parts = raw.parts[1:] if strip_root else raw.parts
+            if not parts:
+                continue
+            rel = pathlib.PurePosixPath(*parts)
+            if rel in seen:
+                fail(f"{archive_path.name}: duplicate archive path {str(rel)!r}")
+            seen.add(rel)
+            normalized.append((member, rel))
+        if entry not in seen or not any(m.isfile() for m, rel in normalized if rel == entry):
+            fail(f"{archive_path.name}: required entrypoint {entrypoint!r} is missing")
+        with tempfile.TemporaryDirectory(prefix="averagechris-game-") as tmp:
+            stage = pathlib.Path(tmp)
+            for member, rel in normalized:
+                target = stage.joinpath(*rel.parts)
+                if member.isdir():
+                    target.mkdir(parents=True, exist_ok=True)
+                    continue
+                target.parent.mkdir(parents=True, exist_ok=True)
+                source = archive.extractfile(member)
+                if source is None:
+                    fail(f"{archive_path.name}: could not read {member.name!r}")
+                with source, target.open("wb") as output:
+                    shutil.copyfileobj(source, output)
+                target.chmod(0o644)
+            if destination.exists():
+                shutil.rmtree(destination)
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copytree(stage, destination)
+
+
+def acquire_game(repo: pathlib.Path, game: object, site_dir: pathlib.Path) -> dict:
+    slug = game.slug
+    print(f"  games/{slug}: resolving tags", flush=True)
+    tags, main_sha = ls_remote(game.srht_repo)
+    versions = sorted(tags, key=semver_key, reverse=True)
+    if not versions:
+        return {"slug": slug, "published": False, "state": {"tag": "", "tag_sha": "", "main_sha": main_sha, "artifacts": []}}
+    tag = versions[0]
+    name = f"{game.artifact_prefix}-{tag}-web.tar.gz"
+    url = srht_download(game.srht_repo, tag, name)
+    checksum_data = fetch(url + ".sha256", soft=True)
+    if checksum_data is None:
+        fail(f"{game.srht_repo} {tag}: newest semver tag has no web artifact checksum yet; refusing to replace the last playable release")
+    checksum = parse_checksum(checksum_data, name, url + ".sha256")
+    cache_key = f"games/{game.srht_repo}/{tag}/{name}"
+    cached = artifact_cache_path(repo, cache_key)
+    if not download_artifact(repo, url, name, cached, soft=False, sha256=checksum, cache_key=cache_key):
+        fail(f"{game.srht_repo} {tag}: web artifact disappeared after checksum became visible")
+    safe_extract_game(cached, site_dir / "games" / slug, game.entrypoint)
+    artifact = {"kind": "web_game", "name": name, "version": tag, "sha256": checksum, "url": url, "sha_url": url + ".sha256"}
+    return {
+        "slug": slug,
+        "published": True,
+        "game": dataclasses.asdict(game) if dataclasses.is_dataclass(game) else dict(game),
+        "release": {"version": tag, "artifact": artifact, "play_url": f"/games/{slug}/" + ("" if game.entrypoint == "index.html" else game.entrypoint)},
+        "state": {"tag": tag, "tag_sha": tags[tag], "main_sha": main_sha, "artifacts": [artifact]},
+    }
 
 
 def acquire_fleet_data(repo: pathlib.Path, config: dict, site_dir: pathlib.Path, base_url: str) -> dict:
@@ -372,10 +489,26 @@ def acquire_fleet_data(repo: pathlib.Path, config: dict, site_dir: pathlib.Path,
         meta[p["path"]] = result["meta"]
         state["projects"][p["path"]] = result["state"]
         fleet_projects[p["path"]] = result["info"]
+    game_results: dict[str, dict] = {}
+    games = list(config.get("games", []))
+    with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
+        futures = {executor.submit(acquire_game, repo, game, site_dir): game for game in games}
+        for future in concurrent.futures.as_completed(futures):
+            result = future.result()
+            game_results[result["slug"]] = result
+    game_data = []
+    state["games"] = {}
+    for game in games:
+        result = game_results[game.slug]
+        state["games"][game.slug] = result["state"]
+        if result["published"]:
+            game_data.append({**result["game"], **result["release"], "published": True})
+        elif game.listed:
+            game_data.append({**dataclasses.asdict(game), "published": False, "version": "", "play_url": ""})
     update_release_artifacts(repo, cached_sha256, cached_absent, learned_sha256, learned_absent)
     all_wiki = site_wiki + [page for info in fleet_projects.values() for page in info.get("wiki", [])]
     detect_wiki_collisions(all_wiki)
-    return {"published": published, "meta": meta, "project_pages": {k: sorted(v) for k, v in pages.items()}, "projects": fleet_projects, "wiki": all_wiki, "state": state, "release_dates": {}}
+    return {"published": published, "meta": meta, "project_pages": {k: sorted(v) for k, v in pages.items()}, "projects": fleet_projects, "games": game_data, "wiki": all_wiki, "state": state, "release_dates": {}}
 
 
 def write_fleet_json(repo: pathlib.Path, fleet_json: dict) -> pathlib.Path:
@@ -429,4 +562,3 @@ def parse_manifest(manifest: dict | None) -> dict | None:
         "artifacts": current,
         "platforms": [artifact["label"] for artifact in current],
     }
-

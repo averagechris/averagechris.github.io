@@ -6,7 +6,7 @@ from durable sources (annotated git tags, tag artifacts, and docs pages fetched
 from each repo), materializes canonical site data for Zola, invokes Zola, writes
 SourceHut siteconfig.json, records input pins in state.json, and packs dist/site
 into dist/pages.tar.gz. Root publishes replace the entire site;
-site-data/projects.toml is the registry of subdirectories.
+site-data/projects.toml and site-data/games.toml are the registries of routes.
 """
 
 from __future__ import annotations
@@ -115,7 +115,7 @@ def main() -> None:
     args = parser.parse_args()
     repo = repo_root()
     loaded = load_site_data(repo)
-    config = {"site": dict(loaded.site), "projects": loaded.projects, "pages": loaded.pages, "notes": loaded.notes, "wiki": loaded.wiki}
+    config = {"site": dict(loaded.site), "projects": loaded.projects, "games": loaded.games, "pages": loaded.pages, "notes": loaded.notes, "wiki": loaded.wiki}
     site = config["site"]
     domain = args.domain or site["domain"]
     base_url = f"https://{domain}"

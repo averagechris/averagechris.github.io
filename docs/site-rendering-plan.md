@@ -256,6 +256,15 @@ pages-alike QA are in place and gated the Zola cutover; re-run for every
 renderer-affecting change. Island/progressive-nav items pending those
 milestones.
 
+Full-page browser games are distinct from optional Leptos islands. A released
+game bundle owns `/games/<slug>/` and may load its own relative JS, WASM, JSON,
+images, audio, and other nested static assets; the Zola-owned `/games/` index
+retains useful descriptions and source links without JavaScript. The existing
+WASM spike proves the transport/CSP/MIME substrate, but the first Palabra
+release must still be checked locally with `nix run .#serve` and immediately on
+production for entrypoint loading, relative assets, WASM MIME, keyboard/touch
+input, reduced motion, and a useful failure state when JS is disabled.
+
 Tasks:
 
 - Compare old and new rendered URL inventories before switching production.

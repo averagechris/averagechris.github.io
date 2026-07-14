@@ -14,6 +14,24 @@ backstop. `refresh-pages` compares the latest tags and main SHAs to the live
 rebuilds deterministically from sourcehut, fingerprints again before publishing,
 and retries a bounded number of times so concurrent releases converge.
 
+Browser games follow the same single-publisher rule. `site-data/games.toml` is
+the canonical, checked registry; it currently registers Palabra. A game release
+attaches exactly `<artifact_prefix>-vX.Y.Z-web.tar.gz` and a sibling
+`.sha256` to its semver tag. The newest semver release is selected. The archive
+may contain files directly or one top-level directory and may contain arbitrary
+nested static assets. After checksum verification, the publisher strips the
+optional top-level directory and gives the bundle ownership of
+`/games/<slug>/`, including `index.html`. Zola owns only `/games/`.
+
+Game extraction is a security boundary: absolute/traversing paths, duplicate
+paths, links, devices and other special members are rejected; file count and
+expanded byte limits are enforced; the configured entrypoint must be a regular
+file. Extraction happens in a temporary directory before route-tree
+replacement. Cached inputs are namespaced by repository, tag, and artifact,
+and a corrupt cache entry is discarded rather than published. Same-origin game
+JavaScript/WASM is trusted executable content, so game repositories must be as
+trusted as this publisher and static output must never contain secrets.
+
 Optional project docs under selected allowlisted `docs/pages/*.html` filenames
 (`overview.html`, `examples.html`, `example.html`, `demo.html`,
 `changelog.html`, `tour.html`, and `sample-review.html`) are copied from pinned
@@ -67,12 +85,34 @@ Top-level fields:
     human `label`, `sha256`, `hosted`, `url`, and `sha_url`. Hosted artifacts
     use the same published URLs recorded in `state.json`; older non-hosted
     artifacts point at sourcehut tag artifact URLs.
+- `games`: listed canonical game records augmented with `published`, `version`,
+  `play_url`, and one `kind = web_game` artifact record. Unreleased games remain
+  visible on the index as release-pending but have no play URL.
 - `release_dates`: object keyed as `project-path/version` with ISO release dates
   learned from local fleet checkouts or read from `release-dates.toml`.
 - `release-artifacts.toml`: committed cache of immutable artifact sha256s and known-absent older artifacts, refreshed by `build-pages`.
 - `state`: exact assembly payload written to published `/state.json`, including
   volatile `generated_at` and `trigger` metadata. Renderers should not need this
   except for parity checks; assembly owns it.
+
+`state.games.<slug>` records `tag`, annotated `tag_sha`, pinned `main_sha`, and
+the verified web artifact (`name`, `version`, `sha256`, source URLs). Refresh
+fingerprints namespace these as `games/<slug>`. The before fingerprint is also
+written to `FLEET_REFS_JSON`; acquisition consumes those exact tag/main refs for
+both tools and games, then refresh fingerprints again before publication. A
+missing or malformed pin is fatal rather than silently falling back to mutable
+remote refs. A release-triggered refresh waits for the requested tag and at least one complete
+artifact/checksum pair, avoiding the tag-to-artifact visibility race.
+Tag object SHAs are part of both fingerprints, so even an unexpected tag
+retarget cannot pass the stability check. A newest game tag without its checksum
+is treated as a transient hard failure, never as permission to remove the prior
+playable route. Main-branch publishing uses `refresh-pages --force`: site-code
+changes always rebuild, while the same before/after release-input check prevents
+a concurrent release from being overwritten by stale output.
+Artifact names and parsed checksum digests are fingerprinted together, so a
+same-name checksum change cannot be mistaken for stable input. Triggered builds
+also require the annotated tag to peel to `TRIGGER_SHA` before accepting its
+artifact pair.
 
 `generated/fleet.json` is derived output and is ignored by version control. It
 intentionally keeps site-domain-dependent strings only where current published
@@ -111,3 +151,21 @@ tarballs, sr.ht artifact upload orchestration, and site refresh trigger
 manifests. A language preset supplies version stamping, optional verification,
 CI gate apps, and build outputs for `mkReleaseTarball`. `lib.mkFleetApps` remains
 the Rust preset alias for existing fleet repos.
+`lib.fleet.presets.webGame` is independent of the Rust preset, whose behavior
+and compatibility alias remain unchanged. The web preset defaults to
+`package.json`, reads/stamps its JSON `version`, accepts optional `ciFmt`,
+`ciTest`, and `ciCheck` derivations, adds `ci-web`, and packages a finished
+static derivation into a platform-neutral deterministic tar/gzip
+(sorted paths, normalized ownership/mode/time, gzip timestamp disabled) with a
+matching SHA-256 file. Its standard `release` helper uploads the pair and
+submits the central refresh, but does not permit a redundant Linux release job.
+
+The reusable tag-trigger contract is `core.mkRefreshTriggerManifest`. It is a
+shell fragment used after artifact and checksum upload, with `tag` and `commit`
+in scope. It writes an ephemeral SourceHut manifest carrying `TRIGGER_SOURCE`,
+`TRIGGER_PROJECT`, `TRIGGER_TAG`, and `TRIGGER_SHA`, checks out only this central
+publisher, runs `nix run .#refresh-pages`, and submits with `--secrets`. Custom
+tag-triggered release CI must first build `.#release-artifact`, upload both its
+tarball and checksum to the checked-out semver tag, then preserve that refresh
+environment and ordering rather than publishing Pages directly. The complete
+manifest contract and required OAuth grants are documented in the README.

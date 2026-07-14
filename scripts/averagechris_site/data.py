@@ -62,9 +62,22 @@ class WikiPage:
 
 
 @dataclasses.dataclass(frozen=True)
+class Game:
+    slug: str
+    name: str
+    description: str
+    repo: str
+    srht_repo: str
+    artifact_prefix: str
+    entrypoint: str
+    listed: bool
+
+
+@dataclasses.dataclass(frozen=True)
 class SiteData:
     site: dict
     projects: list[dict]
+    games: list[Game]
     pages: list[Page]
     notes: list[Note]
     wiki: list[WikiPage]
@@ -225,6 +238,49 @@ def _load_projects(root: pathlib.Path) -> list[dict]:
     return projects
 
 
+def _relative_file(value: object, path: pathlib.Path, key: str) -> str:
+    file = _text(value, path, key)
+    pure = pathlib.PurePosixPath(file)
+    if file.startswith("/") or not pure.parts or any(part in ("", ".", "..") for part in pure.parts):
+        _fail(path, f"{key!r} must be a normalized relative path")
+    return file
+
+
+def _load_games(root: pathlib.Path) -> list[Game]:
+    path = root / "games.toml"
+    data = _read_toml(path)
+    games = data.get("games")
+    if not isinstance(games, list):
+        _fail(path, "missing [[games]] table")
+    parsed: list[Game] = []
+    seen: set[str] = set()
+    for game in games:
+        if not isinstance(game, dict):
+            _fail(path, "game entries must be tables")
+        slug = _slug(game.get("slug"), path)
+        if slug in seen:
+            _fail(path, f"duplicate game slug {slug!r}")
+        seen.add(slug)
+        srht_repo = _slug(game.get("srht_repo"), path, "srht_repo")
+        artifact_prefix = _slug(game.get("artifact_prefix"), path, "artifact_prefix")
+        listed = game.get("listed", True)
+        if not isinstance(listed, bool):
+            _fail(path, f"game {slug!r} listed must be a boolean")
+        parsed.append(
+            Game(
+                slug=slug,
+                name=_text(game.get("name"), path, "name"),
+                description=_text(game.get("description"), path, "description"),
+                repo=_text(game.get("repo"), path, "repo"),
+                srht_repo=srht_repo,
+                artifact_prefix=artifact_prefix,
+                entrypoint=_relative_file(game.get("entrypoint", "index.html"), path, "entrypoint"),
+                listed=listed,
+            )
+        )
+    return parsed
+
+
 def load_site_data(repo: pathlib.Path | str) -> SiteData:
     root = pathlib.Path(repo) / "site-data"
     site_path = root / "site.toml"
@@ -233,7 +289,7 @@ def load_site_data(repo: pathlib.Path | str) -> SiteData:
         _fail(site_path, "missing [site] table")
     for key in ("domain", "title", "name", "about"):
         _text(site.get(key), site_path, key)
-    return SiteData(site=site, projects=_load_projects(root), pages=_load_pages(root), notes=_load_notes(root), wiki=_load_wiki(root))
+    return SiteData(site=site, projects=_load_projects(root), games=_load_games(root), pages=_load_pages(root), notes=_load_notes(root), wiki=_load_wiki(root))
 
 
 def main() -> None:
@@ -248,7 +304,7 @@ def main() -> None:
         data = load_site_data(repo)
     except SiteDataError as error:
         raise SystemExit(f"error: {error}") from error
-    print(f"ok: {len(data.projects)} projects, {len(data.pages)} pages, {len(data.notes)} notes, {len(data.wiki)} wiki pages")
+    print(f"ok: {len(data.projects)} projects, {len(data.games)} games, {len(data.pages)} pages, {len(data.notes)} notes, {len(data.wiki)} wiki pages")
 
 
 if __name__ == "__main__":
