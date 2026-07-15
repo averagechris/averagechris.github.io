@@ -204,7 +204,7 @@
         name = "release";
         runtimeInputs = (with pkgs; [coreutils git jujutsu nix python3]) ++ lib.optional (srhtPackage != null) srhtPackage ++ runtimeInputs;
         text = ''
-          set -euo pipefail; repo_root="$(git rev-parse --show-toplevel 2>/dev/null || jj root)"; cd "$repo_root"
+          set -euo pipefail; export TERM=dumb; repo_root="$(git rev-parse --show-toplevel 2>/dev/null || jj root)"; cd "$repo_root"
           ${lib.optionalString (srhtPackage == null) ''
             srht() {
               printf '%s\n' 'fleet release requires srhtPackage; pass fleet.packages.<system>.srht to the preset' >&2
@@ -222,7 +222,6 @@
             else "1"
           } -eq 1 ]]; then
             (
-              export TERM=dumb
               ${validateScript}
             ) < /dev/null
           fi
@@ -237,7 +236,6 @@
             else "0"
           } -eq 1 ]]; then
             (
-              export TERM=dumb
               ${validateScript}
             ) < /dev/null
           fi
