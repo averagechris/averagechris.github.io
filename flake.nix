@@ -11,7 +11,7 @@
     flake-utils.url = "github:numtide/flake-utils";
     # Approved fleet channel. Advance this release tag only together with the
     # x86_64-linux flake-output-cache warm.
-    srht.url = "git+https://git.sr.ht/~averagechris/srht?ref=refs/tags/v0.8.1";
+    srht.url = "git+https://git.sr.ht/~averagechris/srht?ref=refs/tags/v0.9.0";
   };
 
   outputs = {
