@@ -304,14 +304,12 @@ def flake_nix(args: argparse.Namespace) -> str:
       inputs = {{
         nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
         fleet.url = "git+https://git.sr.ht/~averagechris/averagechris.srht.site";
-        srht.url = "git+https://git.sr.ht/~averagechris/srht";
       }};
 
       outputs = {{
         self,
         nixpkgs,
         fleet,
-        srht,
       }}: let
         systems = [
           "aarch64-darwin"
@@ -335,6 +333,7 @@ def flake_nix(args: argparse.Namespace) -> str:
             versionMode = "package";
             versionFile = "Cargo.toml";
             lockPackages = ["{args.name}"];
+            srhtPackage = fleet.packages.${{system}}.srht;
           }};
         mkToolApp = system: name: runtimeInputs: text: let
           pkgs = pkgsFor system;
@@ -435,7 +434,7 @@ def flake_nix(args: argparse.Namespace) -> str:
               rustc
               rustfmt
               sccache
-            ] ++ [srht.packages.${{system}}.srht];
+            ] ++ [fleet.packages.${{system}}.srht];
           }};
         }});
 
@@ -484,7 +483,7 @@ def release_manifest(args: argparse.Namespace) -> str:
       - upload-and-refresh: |
           set -eu
           cd {args.srht_repo}
-          srht() {{ nix run 'git+https://git.sr.ht/~averagechris/srht' -- "$@"; }}
+          srht() {{ nix run --inputs-from . fleet#srht -- "$@"; }}
           set +x
           export SRHT_TOKEN="${{SRHT_TOKEN:-${{OAUTH2_TOKEN:-$(awk '/access-token/ {{ gsub(/"/, "", $2); print $2; exit }}' ~/.config/hut/config 2>/dev/null || true)}}}}"
           set -x
@@ -600,6 +599,8 @@ def readme(args: argparse.Namespace) -> str:
 
     The shared release interface comes from
     `git+https://git.sr.ht/~averagechris/averagechris.srht.site#lib.fleet.presets.rust`.
+    Its locked fleet input supplies the approved srht CLI; release manifests use
+    `nix run --inputs-from . fleet#srht`, never a floating srht URL.
 
     ## Issues
 
@@ -645,6 +646,9 @@ def agents_md(args: argparse.Namespace) -> str:
     `.builds/ci.yml` runs automatically on every push and warms the
     averagechris-dotfiles Cachix cache when the CI secret is available.
     `builds/release-linux-x86_64.yml` is explicit-submit only; do not move it to `.builds/`.
+    The flake passes `fleet.packages.${{system}}.srht` to release tooling, and
+    static manifests run `nix run --inputs-from . fleet#srht`. Keep this approved
+    fleet-locked channel; never replace it with a floating srht URL.
 
     ## Issue tracking
 

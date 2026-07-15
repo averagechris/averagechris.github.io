@@ -10,9 +10,9 @@
     # validation behavior while keeping the fleet command names stable.
     #
     # Linux release manifests (builds/release-linux-x86_64.yml) run on the
-    # nixos/unstable image, which has NO system python3 or srht on PATH — use
-    # awk/sed for version extraction and `nix run git+https://git.sr.ht/~averagechris/srht --`
-    # for uploads/submits (see workctl's manifest for the reference shape).
+    # nixos/unstable image has NO system python3 or srht on PATH. Static
+    # manifests use `nix run --inputs-from . fleet#srht --`; release apps should
+    # receive the approved `fleet.packages.${system}.srht` as srhtPackage.
     # Required oauth grants for the job (repo lookup needs git PROFILE:RO +
     # REPOSITORIES:RO; artifact upload needs OBJECTS:RW; submitting the
     # site-refresh manifest needs JOBS:RW + SECRETS:RO + builds PROFILE:RO,
@@ -185,6 +185,10 @@
       linuxManifest ? "builds/release-linux-x86_64.yml",
       allowLinuxBuild ? true,
       validateAfterPrepare ? false,
+      # Supplying this puts the caller's pinned derivation on PATH. null keeps
+      # old consumers evaluable, but their release app fails with migration
+      # guidance instead of silently fetching an unapproved floating CLI.
+      srhtPackage ? null,
       runtimeInputs ? [],
     }: let
       readVersion =
@@ -198,10 +202,15 @@
     in
       pkgs.writeShellApplication {
         name = "release";
-        runtimeInputs = (with pkgs; [coreutils git jujutsu nix python3]) ++ runtimeInputs;
+        runtimeInputs = (with pkgs; [coreutils git jujutsu nix python3]) ++ lib.optional (srhtPackage != null) srhtPackage ++ runtimeInputs;
         text = ''
           set -euo pipefail; repo_root="$(git rev-parse --show-toplevel 2>/dev/null || jj root)"; cd "$repo_root"
-          srht() { nix run 'git+https://git.sr.ht/~averagechris/srht' -- "$@"; }
+          ${lib.optionalString (srhtPackage == null) ''
+            srht() {
+              printf '%s\n' 'fleet release requires srhtPackage; pass fleet.packages.<system>.srht to the preset' >&2
+              return 2
+            }
+          ''}
           version=""; revision="@"; validate=1; tag_release=1; build_artifact=1; upload_artifact=1; submit_refresh=1; submit_linux_build=0; allow_downgrade=0; linux_manifest=${q linuxManifest}
           while [[ $# -gt 0 ]]; do case "$1" in --version) version="$2"; shift 2;; --revision) revision="$2"; shift 2;; --allow-downgrade) allow_downgrade=1; shift;; --skip-validate) validate=0; shift;; --skip-tag) tag_release=0; shift;; --skip-artifact) build_artifact=0; shift;; --skip-upload) upload_artifact=0; shift;; --skip-refresh) submit_refresh=0; shift;; --submit-linux-build) submit_linux_build=1; shift;; -h|--help) printf 'usage: release [--version X.Y.Z] [--allow-downgrade] [--submit-linux-build] [--skip-*]\n'; exit 0;; *) printf 'unknown argument: %s\n' "$1" >&2; exit 1;; esac; done
           ${lib.optionalString (!allowLinuxBuild) ''
@@ -324,6 +333,7 @@
     # static-checks app (e.g. deny, machete, statix). These are derivations,
     # not flake app names, so running static-checks does not re-evaluate Nix.
     extraStaticChecks ? [],
+    srhtPackage ? null,
     ...
   }: let
     cargoVersionExpr =
@@ -398,7 +408,7 @@
     };
     refreshTrigger = core.mkRefreshTriggerManifest {inherit pname subdir;};
     release = core.mkRelease {
-      inherit pkgs pname srhtRepo versionFile refreshTrigger prepareRelease releaseTag;
+      inherit pkgs pname srhtRepo versionFile refreshTrigger prepareRelease releaseTag srhtPackage;
       versionExpr = cargoVersionExpr;
       runtimeInputs = rustToolchain;
       ciApps = ["ci-fmt" "ci-clippy" "ci-test"];
@@ -470,6 +480,7 @@
     ciCheck ? null,
     prepareVerify ? null,
     extraStaticChecks ? [],
+    srhtPackage ? null,
     ...
   }: let
     packageJson = builtins.fromJSON (builtins.readFile (self + "/${versionFile}"));
@@ -533,7 +544,7 @@
       ci-check = ciCheck;
     };
     release = core.mkRelease {
-      inherit pkgs pname srhtRepo versionFile versionCommand refreshTrigger prepareRelease releaseTag;
+      inherit pkgs pname srhtRepo versionFile versionCommand refreshTrigger prepareRelease releaseTag srhtPackage;
       artifactPackage = releaseArtifact;
       allowLinuxBuild = false;
       validateAfterPrepare = true;

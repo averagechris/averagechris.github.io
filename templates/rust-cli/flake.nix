@@ -9,14 +9,12 @@
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
     fleet.url = "git+https://git.sr.ht/~averagechris/averagechris.srht.site";
-    srht.url = "git+https://git.sr.ht/~averagechris/srht";
   };
 
   outputs = {
     self,
     nixpkgs,
     fleet,
-    srht,
   }: let
     systems = [
       "aarch64-darwin"
@@ -39,6 +37,7 @@
         versionMode = "package";
         versionFile = "Cargo.toml";
         lockPackages = ["example-cli"];
+        srhtPackage = fleet.packages.${system}.srht;
       };
     mkToolApp = system: name: runtimeInputs: text: let
       pkgs = pkgsFor system;
@@ -164,7 +163,7 @@
               rustfmt
               sccache
             ]
-            ++ [srht.packages.${system}.srht];
+            ++ [fleet.packages.${system}.srht];
         };
       }
     );

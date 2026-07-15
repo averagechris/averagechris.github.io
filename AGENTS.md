@@ -35,8 +35,12 @@ Release tooling uses srht (the in-house CLI), migrated off hut fleet-wide on
 2026-07-06. Command mapping vs hut: artifact uploads take ONE file per
 `srht git artifact upload`; `--tags` is `--tag`; submits default to unlisted
 visibility. CI manifests get srht via
-`srht() { nix run 'git+https://git.sr.ht/~averagechris/srht' -- "$@"; }`
-(closure warmed in cachix; see todo #41 for the fleet-cache-warmer entry).
+`srht() { nix run --inputs-from . fleet#srht -- "$@"; }`. Fleet presets receive
+`srhtPackage = fleet.packages.${system}.srht`. This site flake is the approved
+channel: its lock owns the exact srht release revision, and
+`.#flake-output-cache` explicitly warms that x86_64-linux closure before fleet
+consumers advance their `fleet` input. Never replace this with a floating srht
+URL or describe it as “latest”.
 Legacy per-repo `hut pages publish --subdirectory` apps are deprecated
 leftovers — leave them; this repo is the sole publisher.
 
@@ -102,7 +106,8 @@ review and apply registry updates explicitly. Default homepage tier metadata is
 - CI pulls from the `averagechris-dotfiles` cachix cache: every new build
   manifest should copy the NIX_CONFIG substituter block from
   `.builds/refresh-pages.yml`. `.builds/cache-flake.yml` builds and pushes this
-  repo's generic `.#flake-output-cache` closure for non-website flake outputs;
+  repo's generic `.#flake-output-cache` closure for non-website flake outputs,
+  including the explicitly approved `packages.x86_64-linux.srht` closure;
   thorny's hourly `fleet-cache-warmer` still pushes each fleet repo's
   x86_64-linux `release-artifact` at main (see dotfiles docs/thorny.md).
 - Fetching raw CI logs (hut can't): token lives on suremac at

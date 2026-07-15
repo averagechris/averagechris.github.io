@@ -9,7 +9,9 @@
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
     flake-utils.url = "github:numtide/flake-utils";
-    srht.url = "git+https://git.sr.ht/~averagechris/srht";
+    # Approved fleet channel. Advance this release tag only together with the
+    # x86_64-linux flake-output-cache warm.
+    srht.url = "git+https://git.sr.ht/~averagechris/srht?ref=refs/tags/v0.8.1";
   };
 
   outputs = {
@@ -49,6 +51,7 @@
           ciTest = webGameFixtureCi "fixture-test";
           ciCheck = webGameFixtureCi "fixture-check";
           prepareVerify = null;
+          inherit srhtPackage;
         };
 
         mkApp = name: script: {
@@ -192,10 +195,14 @@
           cachePaths = let
             packageOutputs = self.packages.${system} or {};
             appOutputs = self.apps.${system} or {};
-            cacheablePackageNames = builtins.filter (name: !(builtins.elem name uncachedPackageNames)) (builtins.attrNames packageOutputs);
-            cacheableAppNames = builtins.filter (name: !(builtins.elem name websiteAppNames)) (builtins.attrNames appOutputs);
+            # srht is deliberately listed rather than merely discovered: the
+            # approved CLI closure must be warm before consumers advance fleet.
+            approvedSrhtPaths = [srhtPackage];
+            cacheablePackageNames = builtins.filter (name: name != "srht" && !(builtins.elem name uncachedPackageNames)) (builtins.attrNames packageOutputs);
+            cacheableAppNames = builtins.filter (name: name != "srht" && !(builtins.elem name websiteAppNames)) (builtins.attrNames appOutputs);
           in
-            (map (name: packageOutputs.${name}) cacheablePackageNames)
+            approvedSrhtPaths
+            ++ (map (name: packageOutputs.${name}) cacheablePackageNames)
             ++ (map (name: appProgramRoot appOutputs.${name}.program) cacheableAppNames)
             ++ [
               self.devShells.${system}.default
@@ -239,7 +246,17 @@
               touch "$out"
           '';
 
+        checks.srht-channel = assert self.packages.${system}.srht == srhtPackage;
+        assert self.apps.${system}.srht.program == srht.apps.${system}.srht.program;
+          pkgs.runCommand "check-approved-srht-channel" {nativeBuildInputs = [pkgs.gnugrep];} ''
+            grep -Fx ${pkgs.lib.escapeShellArg (toString srhtPackage)} ${flakeOutputCache}/nix-support/cache-paths
+            touch "$out"
+          '';
+
         apps = {
+          # Re-export the input app verbatim; do not rebuild it with site nixpkgs.
+          srht = srht.apps.${system}.srht;
+
           build-pages = {
             type = "app";
             program = pkgs.lib.getExe buildPagesScript;
@@ -312,6 +329,9 @@
         };
 
         packages.new-project = newProjectScript;
+        # Re-export the approved input derivation verbatim. Consumer projects
+        # may pass this to fleet presets as `srhtPackage`.
+        packages.srht = srhtPackage;
         packages.flake-output-cache = flakeOutputCache;
 
         formatter = nixFormatter;

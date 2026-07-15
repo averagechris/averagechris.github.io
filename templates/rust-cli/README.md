@@ -15,3 +15,7 @@ After using the raw template, replace `example-cli` in `Cargo.toml`,
 cargo generate-lockfile
 nix --accept-flake-config flake lock
 ```
+
+The resulting project receives the approved `srht` CLI through its locked
+`fleet` input. Release manifests use `nix run --inputs-from . fleet#srht`; do
+not add a separate or floating srht input.

@@ -30,3 +30,6 @@ nix run .#release -- --version X.Y.Z --submit-linux-build
 
 `.builds/ci.yml` runs automatically on every push. `builds/release-linux-x86_64.yml`
 is explicit-submit only; do not move it to `.builds/`.
+The flake passes `fleet.packages.${system}.srht` to the release preset, and the
+static manifest runs `nix run --inputs-from . fleet#srht`. Keep that approved,
+fleet-locked channel; never replace it with a floating srht URL.

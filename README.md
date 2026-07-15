@@ -10,6 +10,25 @@ release flow is built from composable `lib.fleet.core` helpers, creates
 annotated tags, uploads release tarballs as sr.ht tag artifacts, and submits a
 SourceHut build that runs this site's `refresh-pages` publisher.
 
+This flake is also the approved fleet channel for the `srht` CLI. It re-exports
+the release-pinned input unchanged as `packages.${system}.srht` and
+`apps.${system}.srht`; it is not rebuilt against this site's nixpkgs. Consumer
+flakes pass the package into a preset:
+
+```nix
+fleet.lib.fleet.presets.rust {
+  inherit pkgs self;
+  pname = "example";
+  srhtPackage = fleet.packages.${system}.srht;
+}
+```
+
+Static release manifests invoke the same approved package with
+`nix run --inputs-from . fleet#srht -- ...`. Projects update only their `fleet`
+input; this site's lock owns the srht revision. The channel pin advances only
+with `.#flake-output-cache` warming its x86_64-linux closure in Cachix—it is an
+approved channel, not an unpinned “latest”.
+
 Browser-game repositories use ecosystem-neutral `lib.fleet.presets.webGame`.
 It reads and stamps `version` in `package.json`, accepts the caller's own CI
 derivations, and emits one platform-neutral `<name>-vX.Y.Z-web.tar.gz` plus
