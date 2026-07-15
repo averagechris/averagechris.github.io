@@ -3,7 +3,9 @@
 
 from __future__ import annotations
 
-import argparse, concurrent.futures, json, os, pathlib, re, shutil, subprocess, sys, tempfile, time, tomllib
+import argparse, concurrent.futures, copy, json, os, pathlib, re, shutil, subprocess, sys, tempfile, time, tomllib
+
+import site_measure
 
 SEMVER = re.compile(r"^v\d+\.\d+\.\d+$")
 
@@ -18,10 +20,12 @@ def ls_refs(repo: str) -> tuple[list[str], str, str, dict[str, str], dict[str, s
     # once, with a hard timeout so the job fails loudly instead of hanging.
     command = ["git", "-c", f"http.userAgent={USER_AGENT}", "ls-remote",
                f"https://git.sr.ht/~averagechris/{repo}"]
-    try:
-        out = subprocess.check_output(command, text=True, timeout=120)
-    except (subprocess.TimeoutExpired, subprocess.CalledProcessError):
-        out = subprocess.check_output(command, text=True, timeout=120)
+    with site_measure.operation("git_ls_remote_count", "git_ls_remote_ms"):
+        try:
+            out = subprocess.check_output(command, text=True, timeout=120)
+        except (subprocess.TimeoutExpired, subprocess.CalledProcessError):
+            site_measure.count("git_ls_remote_retries")
+            out = subprocess.check_output(command, text=True, timeout=120)
     tags, tag_shas, tag_commits, main = [], {}, {}, ""
     for line in out.splitlines():
         sha, ref = line.split("\t", 1)
@@ -52,49 +56,65 @@ def probe(url: str) -> bool:
     # empty codes, and curl failures retry once, then fail loudly rather than
     # silently flipping an artifact between present/absent.
     observed = []
-    for _ in range(2):
-        try:
-            r = subprocess.run(
-                ["curl", "-sI", "-o", "/dev/null", "-w", "%{http_code}", "--max-time", "30",
-                 "--retry", "1", "--user-agent", USER_AGENT, url],
-                stdout=subprocess.PIPE, text=True, timeout=120)
-            code = r.stdout.strip(); observed.append(code or f"curl exit {r.returncode}")
-        except subprocess.TimeoutExpired:
-            code = ""; observed.append("timeout")
-        if code == "200": return True
-        if code == "404": return False
+    with site_measure.operation("probe_count", "probe_ms"):
+        for attempt in range(2):
+            if attempt:
+                site_measure.count("probe_retries")
+            try:
+                r = subprocess.run(
+                    ["curl", "-sI", "-o", "/dev/null", "-w", "%{http_code}", "--max-time", "30",
+                     "--retry", "1", "--user-agent", USER_AGENT, url],
+                    stdout=subprocess.PIPE, text=True, timeout=120)
+                code = r.stdout.strip(); observed.append(code or f"curl exit {r.returncode}")
+            except subprocess.TimeoutExpired:
+                code = ""; observed.append("timeout")
+            if code == "200": return True
+            if code == "404": return False
     raise SystemExit(f"unstable artifact probe for {url}: {', '.join(observed)}")
 
 def checksum(url: str, name: str) -> str | None:
     observed = []
-    for _ in range(2):
-        try:
-            r = subprocess.run(
-                ["curl", "-sS", "--location", "--max-time", "30", "--retry", "1",
-                 "--user-agent", USER_AGENT, "-w", "\n%{http_code}", url],
-                stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=120)
-            body, _, code = r.stdout.rpartition("\n")
-            observed.append(code or f"curl exit {r.returncode}")
-        except subprocess.TimeoutExpired:
-            code, body = "", ""; observed.append("timeout")
-        if code == "404": return None
-        if code == "200":
-            fields = body.strip().split()
-            if not fields or len(fields) > 2 or not re.fullmatch(r"[0-9a-fA-F]{64}", fields[0]):
-                raise SystemExit(f"invalid checksum at {url}")
-            if len(fields) == 2 and fields[1].lstrip("*") != name:
-                raise SystemExit(f"checksum at {url} names {fields[1]!r}, expected {name!r}")
-            return fields[0].lower()
+    with site_measure.operation("checksum_count", "checksum_ms"):
+        for attempt in range(2):
+            if attempt:
+                site_measure.count("checksum_retries")
+            try:
+                r = subprocess.run(
+                    ["curl", "-sS", "--location", "--max-time", "30", "--retry", "1",
+                     "--user-agent", USER_AGENT, "-w", "\n%{http_code}", url],
+                    stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=120)
+                body, _, code = r.stdout.rpartition("\n")
+                observed.append(code or f"curl exit {r.returncode}")
+            except subprocess.TimeoutExpired:
+                code, body = "", ""; observed.append("timeout")
+            if code == "404": return None
+            if code == "200":
+                fields = body.strip().split()
+                if not fields or len(fields) > 2 or not re.fullmatch(r"[0-9a-fA-F]{64}", fields[0]):
+                    raise SystemExit(f"invalid checksum at {url}")
+                if len(fields) == 2 and fields[1].lstrip("*") != name:
+                    raise SystemExit(f"checksum at {url} names {fields[1]!r}, expected {name!r}")
+                return fields[0].lower()
     raise SystemExit(f"unstable checksum fetch for {url}: {', '.join(observed)}")
 
-def fingerprint(root: pathlib.Path) -> tuple[dict[str, dict], dict[str, dict]]:
+def fingerprint(root: pathlib.Path, *, publisher_sha_override: str | None = None) -> tuple[dict[str, dict], dict[str, dict]]:
     """Latest tag + main sha + which platform artifacts exist on the latest tag.
     Artifacts are part of the fingerprint so a late-arriving Linux build still
     triggers a republish of an already-published tag."""
-    repos = [{**r, "kind": "native", "key": r["pages_subdir"]} for r in tomllib.loads((root / "fleet.toml").read_text())["repos"]]
+    fleet = {r["pages_subdir"]: r for r in tomllib.loads((root / "fleet.toml").read_text())["repos"]}
+    # Only canonical site projects can appear in state.json. Fleet-only repos
+    # are maintenance inventory, not render inputs, and previously made every
+    # unchanged refresh look different from the live fingerprint.
+    projects = tomllib.loads((root / "site-data" / "projects.toml").read_text()).get("projects", [])
+    repos = [
+        {**fleet[p["path"]], "kind": "native", "key": p["path"]}
+        for p in projects
+        if p.get("downloads", True) and p["path"] in fleet
+    ]
     games = [{**g, "kind": "web_game", "key": f"games/{g['slug']}"} for g in tomllib.loads((root / "site-data" / "games.toml").read_text()).get("games", [])]
     entries = repos + games
-    out: dict[str, dict] = {"_publisher": {"main_sha": publisher_revision(root)}}
+    publisher_sha = publisher_sha_override or publisher_revision(root)
+    out: dict[str, dict] = {"_publisher": {"main_sha": publisher_sha}}
     refs: dict[str, dict] = {}
     def one(r: dict) -> tuple[str, dict, str, dict]:
         repo = r.get("srht_repo", r.get("name", r.get("slug")))
@@ -127,10 +147,11 @@ def write_refs_json(root: pathlib.Path, refs: dict[str, dict]) -> pathlib.Path:
     return path
 
 def live_state(domain: str) -> dict:
-    r = subprocess.run(
-        ["curl", "-sS", "--max-time", "60", "--retry", "1", "--user-agent", USER_AGENT,
-         f"https://{domain}/state.json"],
-        stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=180)
+    with site_measure.operation("live_state_fetch_count", "live_state_fetch_ms"):
+        r = subprocess.run(
+            ["curl", "-sS", "--max-time", "60", "--retry", "1", "--user-agent", USER_AGENT,
+             f"https://{domain}/state.json"],
+            stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=180)
     try:
         return json.loads(r.stdout)
     except Exception:
@@ -149,6 +170,31 @@ def live_fingerprint(domain: str) -> dict[str, dict]:
         fp[f"games/{k}"] = {"tag": v.get("tag", ""), "tag_sha": v.get("tag_sha", ""), "main_sha": v.get("main_sha", ""), "artifacts": artifacts}
     return fp
 
+def benchmark_live_fingerprint(current: dict[str, dict], scenario: str) -> dict[str, dict]:
+    """Create controlled comparison input; callers must enforce no-publish."""
+    controlled = copy.deepcopy(current)
+    if scenario == "unchanged":
+        return controlled
+    if scenario == "palabra-main-sha-mismatch":
+        key = "games/palabra"
+        if key not in controlled:
+            raise SystemExit("benchmark scenario requires canonical games/palabra")
+        controlled[key]["main_sha"] = "0" * 40 if controlled[key].get("main_sha") != "0" * 40 else "f" * 40
+        return controlled
+    raise SystemExit(f"unknown benchmark live-state scenario: {scenario}")
+
+def classify_comparison(current: dict[str, dict], live: dict[str, dict]) -> str:
+    if current == live:
+        return "unchanged"
+    keys = set(current) | set(live)
+    changed = []
+    for key in sorted(keys):
+        fields = set(current.get(key, {})) | set(live.get(key, {}))
+        changed.extend((key, field) for field in sorted(fields) if current.get(key, {}).get(field) != live.get(key, {}).get(field))
+    if changed == [("games/palabra", "main_sha")]:
+        return "games.palabra.main_sha-only"
+    return "other-mismatch"
+
 def wait_for_trigger(root: pathlib.Path) -> None:
     project, tag, expected_sha = os.environ.get("TRIGGER_PROJECT"), os.environ.get("TRIGGER_TAG"), os.environ.get("TRIGGER_SHA")
     if not project or not tag: return
@@ -157,8 +203,8 @@ def wait_for_trigger(root: pathlib.Path) -> None:
     games = [{**g, "kind": "web_game", "pages_subdir": f"games/{g['slug']}", "name": g["slug"]} for g in tomllib.loads((root / "site-data" / "games.toml").read_text()).get("games", [])]
     entry = next((r for r in repos + games if project in (r["pages_subdir"], r["name"], r.get("srht_repo"))), None)
     repo = (entry.get("srht_repo") or entry["name"]) if entry else project
-    deadline, delay = time.time() + 300, 5
-    while time.time() < deadline:
+    deadline, delay = time.monotonic() + 300, 5
+    while time.monotonic() < deadline:
         refs = ls_refs(repo)
         if tag in refs[0]:
             observed_sha = refs[4].get(tag, "")
@@ -179,16 +225,34 @@ def wait_for_trigger(root: pathlib.Path) -> None:
         time.sleep(delay); delay = min(delay * 2, 60)
     raise SystemExit(f"timed out waiting for {project}/{tag}")
 
-def main() -> None:
+def main(argv: list[str] | None = None) -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--domain", default="averagechris.srht.site")
     ap.add_argument("--no-publish", action="store_true")
     ap.add_argument("--force", action="store_true", help="build even when release inputs match live state")
-    args = ap.parse_args()
+    ap.add_argument(
+        "--benchmark-live-state",
+        choices=("unchanged", "palabra-main-sha-mismatch"),
+        help="controlled comparison input for non-publishing benchmarks only",
+    )
+    args = ap.parse_args(argv)
+    if args.benchmark_live_state and not args.no_publish:
+        ap.error("--benchmark-live-state requires --no-publish")
+    benchmark_publisher_sha = os.environ.get("BENCH_EXPECTED_REVISION", "")
+    if args.benchmark_live_state and not re.fullmatch(r"[0-9a-f]{40}", benchmark_publisher_sha):
+        ap.error("controlled benchmarks require a full BENCH_EXPECTED_REVISION")
     root = pathlib.Path(__file__).resolve().parent.parent
     wait_for_trigger(root)
-    current, refs = fingerprint(root)
-    if not args.force and current == live_fingerprint(args.domain):
+    with site_measure.stage("before_fingerprint"):
+        current, refs = fingerprint(
+            root,
+            publisher_sha_override=benchmark_publisher_sha or None,
+        )
+    with site_measure.stage("live_state_comparison"):
+        live = benchmark_live_fingerprint(current, args.benchmark_live_state) if args.benchmark_live_state else live_fingerprint(args.domain)
+        comparison = classify_comparison(current, live)
+    print(f"fingerprint comparison: {comparison}")
+    if not args.force and comparison == "unchanged":
         print("fingerprint unchanged; no publish needed")
         return
     before, before_refs = current, refs
@@ -198,8 +262,13 @@ def main() -> None:
         env = os.environ.copy()
         env["FLEET_REFS_JSON"] = str(refs_path)
         env["PUBLISHER_SHA"] = before["_publisher"]["main_sha"]
-        run([sys.executable, "scripts/build_pages.py", "--domain", args.domain], cwd=root, env=env)
-        after, after_refs = fingerprint(root)
+        with site_measure.stage("build"):
+            run([sys.executable, "scripts/build_pages.py", "--domain", args.domain], cwd=root, env=env)
+        with site_measure.stage("after_fingerprint"):
+            after, after_refs = fingerprint(
+                root,
+                publisher_sha_override=benchmark_publisher_sha or None,
+            )
         if before == after:
             if args.no_publish:
                 print("would publish dist/pages.tar.gz")

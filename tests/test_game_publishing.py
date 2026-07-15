@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-import io
+from contextlib import nullcontext
 import hashlib
+import io
 import json
 import os
 import pathlib
@@ -145,6 +146,77 @@ class BundleTests(unittest.TestCase):
 
 
 class RefreshTests(unittest.TestCase):
+    def test_fingerprint_uses_only_canonical_site_projects(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            (root / "site-data").mkdir()
+            (root / "fleet.toml").write_text(
+                '[[repos]]\nname="shown"\npages_subdir="shown"\nsrht_repo="shown"\n'
+                '[[repos]]\nname="fleet-only"\npages_subdir="fleet-only"\nsrht_repo="fleet-only"\n'
+            )
+            (root / "site-data/projects.toml").write_text(
+                '[[projects]]\npath="shown"\ndownloads=true\n'
+            )
+            (root / "site-data/games.toml").write_text("games=[]\n")
+            refs = (["v1.0.0"], "v1.0.0", "main", {"v1.0.0": "tag"}, {})
+            with mock.patch.object(refresh_pages, "publisher_revision", return_value="publisher"), \
+                 mock.patch.object(refresh_pages, "ls_refs", return_value=refs) as ls_refs, \
+                 mock.patch.object(refresh_pages, "probe", return_value=False):
+                fingerprint, _ = refresh_pages.fingerprint(root)
+            self.assertEqual(set(fingerprint), {"_publisher", "shown"})
+            self.assertEqual([call.args[0] for call in ls_refs.call_args_list], ["shown"])
+
+    def test_comparison_classifies_exact_palabra_main_sha_mismatch(self) -> None:
+        current = {
+            "_publisher": {"main_sha": "site"},
+            "games/palabra": {"tag": "v1.0.0", "main_sha": "new", "artifacts": []},
+        }
+        live = refresh_pages.benchmark_live_fingerprint(current, "palabra-main-sha-mismatch")
+        self.assertEqual(refresh_pages.classify_comparison(current, current), "unchanged")
+        self.assertEqual(
+            refresh_pages.classify_comparison(current, live),
+            "games.palabra.main_sha-only",
+        )
+
+    def test_controlled_live_state_cannot_enable_publication(self) -> None:
+        with mock.patch.object(refresh_pages, "fingerprint") as fingerprint, \
+             self.assertRaises(SystemExit):
+            refresh_pages.main(["--benchmark-live-state", "unchanged"])
+        fingerprint.assert_not_called()
+
+    def test_only_controlled_no_publish_benchmark_can_use_candidate_revision(self) -> None:
+        fingerprint = {
+            "_publisher": {"main_sha": "candidate"},
+            "games/palabra": {"tag": "v1.0.0", "main_sha": "new", "artifacts": []},
+        }
+        refs = {"palabra": {"tags": {"v1.0.0": "tag"}, "main_sha": "new"}}
+        with mock.patch.dict(os.environ, {"BENCH_EXPECTED_REVISION": "a" * 40}), \
+             mock.patch.object(refresh_pages, "wait_for_trigger"), \
+             mock.patch.object(refresh_pages, "fingerprint", return_value=(fingerprint, refs)) as fingerprint_call, \
+             mock.patch.object(refresh_pages.site_measure, "stage", side_effect=lambda _name: nullcontext()):
+            refresh_pages.main(["--no-publish", "--benchmark-live-state", "unchanged"])
+        fingerprint_call.assert_called_once_with(
+            mock.ANY,
+            publisher_sha_override="a" * 40,
+        )
+
+    def test_controlled_mismatch_keeps_before_build_after_checks_and_cannot_publish(self) -> None:
+        fingerprint = {
+            "_publisher": {"main_sha": "site"},
+            "games/palabra": {"tag": "v1.0.0", "main_sha": "new", "artifacts": []},
+        }
+        refs = {"palabra": {"tags": {"v1.0.0": "tag"}, "main_sha": "new"}}
+        with mock.patch.dict(os.environ, {"BENCH_EXPECTED_REVISION": "a" * 40}), \
+             mock.patch.object(refresh_pages, "wait_for_trigger"), \
+             mock.patch.object(refresh_pages, "fingerprint", side_effect=[(fingerprint, refs), (fingerprint, refs)]) as fingerprint_call, \
+             mock.patch.object(refresh_pages, "write_refs_json", return_value=pathlib.Path("refs.json")), \
+             mock.patch.object(refresh_pages, "run") as run, \
+             mock.patch.object(refresh_pages.site_measure, "stage", side_effect=lambda _name: nullcontext()):
+            refresh_pages.main(["--no-publish", "--benchmark-live-state", "palabra-main-sha-mismatch"])
+        self.assertEqual(fingerprint_call.call_count, 2)
+        self.assertEqual(run.call_count, 1)
+        self.assertIn("build_pages.py", run.call_args.args[0][1])
+
     def test_ls_refs_keeps_annotated_tag_object_and_peeled_commit(self) -> None:
         output = "main\trefs/heads/main\ntag-object\trefs/tags/v1.2.3\ncommit\trefs/tags/v1.2.3^{}\n"
         with mock.patch("refresh_pages.subprocess.check_output", return_value=output):

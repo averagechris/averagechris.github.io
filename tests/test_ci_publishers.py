@@ -27,7 +27,7 @@ class PublisherManifestTests(unittest.TestCase):
     def test_benchmarks_cannot_publish_or_receive_secrets(self) -> None:
         forbidden = ("oauth:", "secrets:", "pages publish", "artifact upload", "builds submit", "submitter:")
         manifests = sorted((ROOT / "builds").glob("benchmark-*.yml"))
-        self.assertEqual([manifest.name for manifest in manifests], ["benchmark-cold.yml", "benchmark-warm.yml"])
+        self.assertEqual([manifest.name for manifest in manifests], ["benchmark-refresh.yml"])
         for manifest in manifests:
             text = manifest.read_text()
             for pattern in forbidden:
@@ -35,6 +35,11 @@ class PublisherManifestTests(unittest.TestCase):
             for line in text.splitlines():
                 if "nix run .#refresh-pages" in line:
                     self.assertIn("--no-publish", line)
+
+        benchmark = manifests[0].read_text()
+        self.assertIn("--benchmark-live-state unchanged", benchmark)
+        self.assertEqual(benchmark.count("--benchmark-live-state palabra-main-sha-mismatch"), 2)
+        self.assertIn("test ! -e dist/pages.tar.gz", benchmark)
 
 
 if __name__ == "__main__":

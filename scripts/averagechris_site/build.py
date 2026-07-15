@@ -20,6 +20,8 @@ import sys
 import tarfile
 import tomllib
 
+import site_measure
+
 from averagechris_site.data import load_site_data
 from averagechris_site.fleet import acquire_fleet_data, load_fleet_json, write_fleet_json
 from averagechris_site.paths import repo_root
@@ -127,7 +129,8 @@ def main() -> None:
     site_dir.mkdir(parents=True)
 
     print("building fleet project pages from sr.ht tags and repo files")
-    fleet_json = acquire_fleet_data(repo, config, site_dir, base_url)
+    with site_measure.stage("acquisition"):
+        fleet_json = acquire_fleet_data(repo, config, site_dir, base_url)
     fleet_json["release_dates"] = update_release_dates(repo, fleet_json["meta"])
     fleet_json_path = write_fleet_json(repo, fleet_json)
     fleet_json = load_fleet_json(fleet_json_path)

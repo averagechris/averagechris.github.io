@@ -19,6 +19,8 @@ import tempfile
 import tomllib
 import urllib.parse
 
+import site_measure
+
 ARTIFACT_RE = re.compile(
     r"(.+)-(?P<version>v\d+\.\d+\.\d+)-"
     r"(?P<arch>x86_64|aarch64)-(?P<os>linux|darwin)\.tar\.gz$"
@@ -54,7 +56,9 @@ USER_AGENT = "averagechris-fleet-pages (+https://averagechris.srht.site)"
 def fetch(url: str, *, soft: bool = False) -> bytes | None:
     """Fetch a URL via curl. python-urllib gets tarpitted by sr.ht's
     anti-scraper defenses on datacenter IPs; curl with a real UA does not."""
-    with tempfile.NamedTemporaryFile() as body:
+    with tempfile.NamedTemporaryFile() as body, site_measure.operation(
+        "acquisition_fetch_count", "acquisition_fetch_ms"
+    ):
         try:
             result = subprocess.run(
                 ["curl", "-sS", "--location", "--max-time", "120", "--retry", "2",
@@ -69,7 +73,9 @@ def fetch(url: str, *, soft: bool = False) -> bytes | None:
                 return None
             fail(f"fetching {url}: {result.stderr.strip()}")
         if code == "200":
-            return pathlib.Path(body.name).read_bytes()
+            data = pathlib.Path(body.name).read_bytes()
+            site_measure.count("acquisition_transfer_bytes", len(data))
+            return data
         if code == "404" or soft:
             return None
         fail(f"fetching {url}: HTTP {code}")
@@ -248,6 +254,7 @@ def download_artifact(repo: pathlib.Path, url: str, name: str, dest: pathlib.Pat
         print(f"  warn: discarding invalid cached artifact {name}")
         cache.unlink()
     if not cache.exists():
+        site_measure.count("artifact_cache_misses")
         data = fetch(url, soft=soft)
         if data is None:
             return False
@@ -261,6 +268,9 @@ def download_artifact(repo: pathlib.Path, url: str, name: str, dest: pathlib.Pat
             staged.write(data)
             staged_path = pathlib.Path(staged.name)
         staged_path.replace(cache)
+        site_measure.count("artifact_transfer_bytes", len(data))
+    else:
+        site_measure.count("artifact_cache_hits")
     dest.parent.mkdir(parents=True, exist_ok=True)
     if cache.resolve() != dest.resolve():
         shutil.copy2(cache, dest)

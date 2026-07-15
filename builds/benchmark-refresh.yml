@@ -1,0 +1,51 @@
+image: nixos/unstable
+arch: x86_64
+environment:
+  # The submitter must replace this with the full candidate commit and pin the
+  # source URL to the same SHA. The task fails closed if either differs.
+  BENCH_EXPECTED_REVISION: REPLACE_WITH_FULL_COMMIT_SHA
+  SITE_REFRESH_MEASURE: "1"
+  GIT_CONFIG_COUNT: "1"
+  GIT_CONFIG_KEY_0: http.userAgent
+  GIT_CONFIG_VALUE_0: averagechris-fleet-pages (+https://averagechris.srht.site)
+  NIX_CONFIG: |
+    experimental-features = nix-command flakes
+    accept-flake-config = true
+    extra-substituters = https://averagechris-dotfiles.cachix.org
+    extra-trusted-public-keys = averagechris-dotfiles.cachix.org-1:VwJkl5dG1+xGDY5x884mH/kVwwpgwBAdBKIF3BZiia4=
+    log-lines = 50
+sources:
+  - https://git.sr.ht/~averagechris/averagechris.srht.site
+tasks:
+  - assert-revision: |
+      set -eu
+      cd averagechris.srht.site
+      actual_revision="$(git rev-parse HEAD)"
+      expected_revision="${BENCH_EXPECTED_REVISION:?set full candidate revision}"
+      test "${#expected_revision}" -eq 40
+      test "$actual_revision" = "$expected_revision"
+      printf 'BENCH_META\texpected_revision\t%s\n' "$expected_revision"
+      printf 'BENCH_META\tactual_revision\t%s\n' "$actual_revision"
+  - build-refresh-app: |
+      set -eu
+      cd averagechris.srht.site
+      nix build --print-build-logs .#fleet-ci-closure
+  - unchanged-no-op: |
+      set -eu
+      cd averagechris.srht.site
+      nix run .#refresh-pages -- --no-publish --benchmark-live-state unchanged
+      test ! -e dist/pages.tar.gz
+  - one-game-main-sha-refresh: |
+      set -eu
+      cd averagechris.srht.site
+      nix run .#refresh-pages -- --no-publish --benchmark-live-state palabra-main-sha-mismatch
+      test -f dist/pages.tar.gz
+      test -f dist/site/state.json
+  - immediate-warm-repeat: |
+      set -eu
+      cd averagechris.srht.site
+      nix run .#refresh-pages -- --no-publish --benchmark-live-state palabra-main-sha-mismatch
+      test -f dist/pages.tar.gz
+      printf 'BENCH_META\tpages_bytes\t%s\n' "$(stat -c %s dist/pages.tar.gz)"
+# Explicit benchmark only: outside .builds, no oauth/secrets/submitter, and every
+# refresh invocation is both controlled-input and --no-publish guarded.
