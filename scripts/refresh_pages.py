@@ -40,6 +40,13 @@ def ls_refs(repo: str) -> tuple[list[str], str, str, dict[str, str], dict[str, s
 PLATFORMS = ("aarch64-darwin", "x86_64-darwin", "aarch64-linux", "x86_64-linux")
 USER_AGENT = "averagechris-fleet-pages (+https://averagechris.srht.site)"
 
+def publisher_revision(root: pathlib.Path) -> str:
+    local = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=root, text=True).strip()
+    remote = ls_refs("averagechris.srht.site")[2]
+    if not remote or local != remote:
+        raise SystemExit(f"publisher checkout {local} is not current main {remote or '<missing>'}")
+    return local
+
 def probe(url: str) -> bool:
     # Tri-state: only 200/404 are stable fingerprint inputs. Tarpits, 5xx,
     # empty codes, and curl failures retry once, then fail loudly rather than
@@ -87,7 +94,7 @@ def fingerprint(root: pathlib.Path) -> tuple[dict[str, dict], dict[str, dict]]:
     repos = [{**r, "kind": "native", "key": r["pages_subdir"]} for r in tomllib.loads((root / "fleet.toml").read_text())["repos"]]
     games = [{**g, "kind": "web_game", "key": f"games/{g['slug']}"} for g in tomllib.loads((root / "site-data" / "games.toml").read_text()).get("games", [])]
     entries = repos + games
-    out: dict[str, dict] = {}
+    out: dict[str, dict] = {"_publisher": {"main_sha": publisher_revision(root)}}
     refs: dict[str, dict] = {}
     def one(r: dict) -> tuple[str, dict, str, dict]:
         repo = r.get("srht_repo", r.get("name", r.get("slug")))
@@ -132,6 +139,8 @@ def live_state(domain: str) -> dict:
 def live_fingerprint(domain: str) -> dict[str, dict]:
     state = live_state(domain)
     fp: dict[str, dict] = {}
+    if state.get("publisher_sha"):
+        fp["_publisher"] = {"main_sha": state["publisher_sha"]}
     for k, v in state.get("projects", {}).items():
         artifacts = sorted(({"name": a.get("name", ""), "sha256": a.get("sha256", "")} for a in v.get("artifacts", []) if a.get("version") == v.get("tag")), key=lambda a: a["name"])
         fp[k] = {"tag": v.get("tag", ""), "tag_sha": v.get("tag_sha", ""), "main_sha": v.get("main_sha", ""), "artifacts": artifacts}
@@ -186,7 +195,9 @@ def main() -> None:
     for attempt in range(1, 4):
         # Hand build_pages the exact refs captured by this attempt's before pass.
         refs_path = write_refs_json(root, before_refs)
-        env = os.environ.copy(); env["FLEET_REFS_JSON"] = str(refs_path)
+        env = os.environ.copy()
+        env["FLEET_REFS_JSON"] = str(refs_path)
+        env["PUBLISHER_SHA"] = before["_publisher"]["main_sha"]
         run([sys.executable, "scripts/build_pages.py", "--domain", args.domain], cwd=root, env=env)
         after, after_refs = fingerprint(root)
         if before == after:

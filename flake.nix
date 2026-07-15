@@ -110,14 +110,9 @@
             # CI (builds.sr.ht oauth grant) exports OAUTH2_TOKEN and provisions
             # ~/.config/hut/config with `access-token "..."` (HCL); srht reads
             # SRHT_TOKEN. Locally, fall through to srht's own keyring auth.
-            if [[ -z "''${SRHT_TOKEN:-}" ]]; then
-              SRHT_TOKEN="''${OAUTH2_TOKEN:-}"
-              hut_config="''${HOME:-}/.config/hut/config"
-              if [[ -z "$SRHT_TOKEN" && -f "$hut_config" ]] && [[ "$(<"$hut_config")" =~ access-token[[:space:]]+\"([^\"]+)\" ]]; then
-                SRHT_TOKEN="''${BASH_REMATCH[1]}"
-              fi
-              if [[ -n "$SRHT_TOKEN" ]]; then export SRHT_TOKEN; fi
-            fi
+            # shellcheck source=/dev/null
+            source ${./scripts/sourcehut_auth.sh}
+            sourcehut_auth
             exec srht pages publish "$tarball" --domain "$domain" "''${site_config_args[@]}"
           '';
         };

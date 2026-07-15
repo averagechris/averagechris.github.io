@@ -173,6 +173,7 @@ class RefreshTests(unittest.TestCase):
 
     def test_live_fingerprint_includes_game_namespace(self) -> None:
         state = {
+            "publisher_sha": "site-main",
             "projects": {},
             "games": {"palabra": {"tag": "v1.2.3", "main_sha": "abc", "artifacts": [
                 {"name": "palabra-v1.2.3-web.tar.gz", "version": "v1.2.3", "sha256": "a" * 64}
@@ -184,6 +185,13 @@ class RefreshTests(unittest.TestCase):
                 [{"name": "palabra-v1.2.3-web.tar.gz", "sha256": "a" * 64}],
             )
             self.assertEqual(refresh_pages.live_fingerprint("example.test")["games/palabra"]["tag_sha"], "")
+            self.assertEqual(refresh_pages.live_fingerprint("example.test")["_publisher"], {"main_sha": "site-main"})
+
+    def test_publisher_revision_rejects_stale_checkout(self) -> None:
+        with mock.patch.object(refresh_pages.subprocess, "check_output", return_value="local\n"), \
+             mock.patch.object(refresh_pages, "ls_refs", return_value=([], "", "remote", {}, {})), \
+             self.assertRaisesRegex(SystemExit, "is not current main"):
+            refresh_pages.publisher_revision(pathlib.Path("."))
 
     def test_trigger_waits_for_game_artifact_and_checksum(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

@@ -12,8 +12,5 @@ tasks:
   - refresh: |
       cd averagechris.srht.site
       nix run .#refresh-pages
-submitter:
-  git.sr.ht:
-    enabled: true
-    allow-refs:
-      - refs/heads/main
+# Explicit-only refresh entry point for scheduled/manual runs. Keeping it
+# outside .builds prevents git.sr.ht from automatically submitting it.

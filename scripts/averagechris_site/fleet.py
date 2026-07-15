@@ -381,7 +381,7 @@ def acquire_fleet_data(repo: pathlib.Path, config: dict, site_dir: pathlib.Path,
     meta: dict[str, dict] = {}
     pages: dict[str, set[str]] = {}
     fleet_projects: dict[str, dict] = {}
-    state = {"generated_at": dt.datetime.now(dt.UTC).isoformat(), "trigger": {"source": os.environ.get("TRIGGER_SOURCE", "manual"), "project": os.environ.get("TRIGGER_PROJECT", ""), "tag": os.environ.get("TRIGGER_TAG", ""), "sha": os.environ.get("TRIGGER_SHA", "")}, "projects": {}}
+    state = {"generated_at": dt.datetime.now(dt.UTC).isoformat(), "publisher_sha": os.environ.get("PUBLISHER_SHA", ""), "trigger": {"source": os.environ.get("TRIGGER_SOURCE", "manual"), "project": os.environ.get("TRIGGER_PROJECT", ""), "tag": os.environ.get("TRIGGER_TAG", ""), "sha": os.environ.get("TRIGGER_SHA", "")}, "projects": {}}
     site_wiki = [{"slug": w.slug, "title": w.title, "description": w.description, "body": w.body, "body_format": w.body_format, "source": "site"} for w in config["wiki"] if w.listed and not w.draft]
     def worker(p: dict) -> dict:
         if not p.get("downloads", True) or p["path"] not in fleet:
