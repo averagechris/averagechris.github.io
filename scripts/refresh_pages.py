@@ -45,7 +45,19 @@ PLATFORMS = ("aarch64-darwin", "x86_64-darwin", "aarch64-linux", "x86_64-linux")
 USER_AGENT = "averagechris-fleet-pages (+https://averagechris.srht.site)"
 
 def publisher_revision(root: pathlib.Path) -> str:
-    local = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=root, text=True).strip()
+    try:
+        local = subprocess.check_output(
+            ["git", "rev-parse", "HEAD"], cwd=root, text=True, stderr=subprocess.DEVNULL
+        ).strip()
+    except subprocess.CalledProcessError:
+        # Managed jj workspaces are intentionally not colocated Git checkouts.
+        # `jj ws add` leaves an empty working-copy commit above the selected
+        # source revision, so its parent is the content being published.
+        local = subprocess.check_output(
+            ["jj", "log", "-r", "@-", "--no-graph", "-T", "commit_id"],
+            cwd=root,
+            text=True,
+        ).strip()
     remote = ls_refs("averagechris.srht.site")[2]
     if not remote or local != remote:
         raise SystemExit(f"publisher checkout {local} is not current main {remote or '<missing>'}")

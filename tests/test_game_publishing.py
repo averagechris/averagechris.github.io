@@ -7,6 +7,7 @@ import json
 import os
 import pathlib
 import shutil
+import subprocess
 import tarfile
 import tempfile
 import unittest
@@ -264,6 +265,13 @@ class RefreshTests(unittest.TestCase):
              mock.patch.object(refresh_pages, "ls_refs", return_value=([], "", "remote", {}, {})), \
              self.assertRaisesRegex(SystemExit, "is not current main"):
             refresh_pages.publisher_revision(pathlib.Path("."))
+
+    def test_publisher_revision_supports_jj_only_workspace(self) -> None:
+        calls = [subprocess.CalledProcessError(128, ["git"]), "remote\n"]
+        with mock.patch.object(refresh_pages.subprocess, "check_output", side_effect=calls) as check_output, \
+             mock.patch.object(refresh_pages, "ls_refs", return_value=([], "", "remote", {}, {})):
+            self.assertEqual(refresh_pages.publisher_revision(pathlib.Path(".")), "remote")
+        self.assertEqual(check_output.call_args_list[1].args[0][:4], ["jj", "log", "-r", "@-"])
 
     def test_trigger_waits_for_game_artifact_and_checksum(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
