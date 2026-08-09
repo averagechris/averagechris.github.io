@@ -3,7 +3,9 @@
 import json
 import os
 from pathlib import Path
+import shutil
 import subprocess
+import sys
 import tempfile
 
 
@@ -53,7 +55,7 @@ class Fixture:
         self.log = root / "nix.log"; self.log.write_text("")
         self.artifact = root / "artifact"; self.artifact.mkdir()
         tools = root / "tools"; tools.mkdir()
-        executable(tools / "nix", """#!/bin/sh
+        executable(tools / "nix", "#!" + shutil.which("sh") + """
 set -eu
 printf '%s\n' "$*" >> "$RELEASE_LOG"
 case "$*" in
@@ -66,7 +68,7 @@ case "$*" in
     printf '%s\n' "$ART_DIR" ;;
 esac
 """)
-        executable(tools / "srht", """#!/usr/bin/env python3
+        executable(tools / "srht", "#!" + sys.executable + """
 import json,os,sys
 p=os.environ['RELEASE_STATE']; s=json.load(open(p)); a=sys.argv[1:]
 if a[:2] == ['auth','status']: raise SystemExit(0)
