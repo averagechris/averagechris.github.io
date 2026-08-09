@@ -222,11 +222,13 @@
           "static-checks"
         ];
           pkgs.runCommand "check-web-game-preset" {
-            nativeBuildInputs = with pkgs; [coreutils gnugrep gnutar gzip python3];
+            nativeBuildInputs = with pkgs; [coreutils git gnugrep gnutar gzip jujutsu python3];
           } ''
               cp -R ${./tests/fixtures/web-game} work
               chmod -R u+w work
               cd work
+            ${webGameFixture.apps.release.program} --help | grep -q -- '--check'
+            RELEASE_PROGRAM=${webGameFixture.apps.release.program} python3 ${./tests/release_behavior.py}
             ${webGameFixture.apps.prepare-release.program} --version 1.2.4
             python3 -c 'import json; assert json.load(open("package.json"))["version"] == "1.2.4"'
             grep -q 'web-game-fixture-v1.2.4-web.tar.gz' builds/release-web.yml

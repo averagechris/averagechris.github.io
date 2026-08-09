@@ -11,10 +11,8 @@ This repo is two things:
 ## The standard release interface (every fleet repo)
 
 ```sh
-nix run .#prepare-release -- --version X.Y.Z   # bump version, date CHANGELOG, fix builds manifest
-nix run .#release-tag                          # annotated vX.Y.Z tag + push
-nix build .#release-artifact                   # reproducible tarball + .sha256
-nix run .#release -- --version X.Y.Z [--submit-linux-build] [--skip-*]
+nix run .#release -- --version X.Y.Z [--submit-linux-build]
+nix run .#release -- --version X.Y.Z --check # non-mutating readiness preflight
 nix run .#static-checks                        # ecosystem-agnostic cheap static gate
 nix run .#ci-fmt / ci-clippy / ci-test         # lint gates (repo extras allowed)
 ```
@@ -53,6 +51,8 @@ Shared release helpers live under `lib.fleet.core`; Rust repos use
 `lib.fleet.presets.rust` via the backward-compatible `lib.mkFleetApps` alias.
 The preset accepts `ciExtraInputs` for extra PATH packages in the ci-* apps
 (e.g. ctx needs python3 because its CLI tests spawn plugin helpers).
+`releaseValidationApps` adds prepared-tree release gates (for example,
+`[ "ci-docs" ]`) after the standard Rust fmt/clippy/test gates.
 Browser games use ecosystem-neutral `lib.fleet.presets.webGame`, provide their
 own `ciFmt`/`ciTest`/`ciCheck` derivations, expose an additional `ci-web` gate,
 and publish one deterministic `-web.tar.gz` plus checksum. The preset defaults

@@ -3,12 +3,26 @@
 ## Shared release tooling
 
 Fleet projects consume `lib.mkFleetApps` (an alias for the Rust preset at
-`lib.fleet.presets.rust`) from this flake to expose the standard
-`prepare-release`, `release-tag`, `release`, `ci-fmt`, `ci-clippy`, `ci-test`,
-and `release-artifact` interface without copying release scripts. The shared
+`lib.fleet.presets.rust`) from this flake to expose the standard one-command
+`release` flow plus CI apps and lower-level `prepare-release`, `release-tag`,
+and `release-artifact` building blocks without copying scripts. The shared
 release flow is built from composable `lib.fleet.core` helpers, creates
 annotated tags, uploads release tarballs as sr.ht tag artifacts, and submits a
 SourceHut build that runs this site's `refresh-pages` publisher.
+
+`nix run .#release -- --version X.Y.Z --check` uses read-only remote queries and
+performs the same fail-fast readiness checks as a release without changing jj
+operations, local refs, files, or remote refs. A normal run requires an empty jj working-copy commit whose
+parent, local `main`, and `main@origin` agree; it then prepares, runs all gates
+on the prepared tree, verifies the artifact/checksum, and atomically publishes
+`main` plus the annotated tag with a remote-main lease. Rust consumers can add
+prepared-tree gates such as docs with `releaseValidationApps = [ "ci-docs" ];`.
+If publication succeeded but upload or build submission failed, rerun the exact
+same release command. An automatic resume is allowed only when the annotated
+tag's peeled commit, remote main, local main/checkout, and requested/current
+version all match. Resume rebuilds and verifies the artifact, skips preparation
+and ref publication, and retries filename-idempotent uploads and tagged builds;
+any mismatch fails closed.
 
 This flake is also the approved fleet channel for the `srht` CLI. It re-exports
 the release-pinned input unchanged as `packages.${system}.srht` and

@@ -3,12 +3,13 @@ I keep my personal tools boring on purpose. Each release-tier repo is a small Ru
 The shared interface is a set of Nix flake apps. In any fleet repo, the release path is meant to look like this:
 
 ```sh
-nix run .#prepare-release -- --version X.Y.Z   # bump version, date CHANGELOG, fix builds manifest
-nix run .#release-tag                          # annotated vX.Y.Z tag + push
-nix build .#release-artifact                   # reproducible tarball + .sha256
-nix run .#release -- --version X.Y.Z [--submit-linux-build] [--skip-*]
+nix run .#release -- --version X.Y.Z [--submit-linux-build]
+nix run .#release -- --version X.Y.Z --check # readiness only
 nix run .#ci-fmt / ci-clippy / ci-test         # lint gates; repos may add extras
 ```
+
+`prepare-release`, `release-tag`, and `release-artifact` remain lower-level
+building blocks; routine releases use the single `release` command above.
 
 That gives every project the same knobs: prepare a version, tag it, build a reproducible artifact, or run the whole release path. The release app uploads SourceHut tag artifacts and submits a root-site refresh instead of publishing Pages from each repo. The CI gates are also flake apps, because if a command matters, I want it named and reproducible instead of hiding in somebody's tab history.
 

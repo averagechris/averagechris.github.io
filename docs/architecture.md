@@ -151,6 +151,15 @@ tarballs, sr.ht artifact upload orchestration, and site refresh trigger
 manifests. A language preset supplies version stamping, optional verification,
 CI gate apps, and build outputs for `mkReleaseTarball`. `lib.mkFleetApps` remains
 the Rust preset alias for existing fleet repos.
+The generic release app has a non-mutating `--check` preflight and requires a
+Git-backed jj checkout. Prepared-tree validation and local artifact/checksum
+verification happen before an atomic, leased publication of `main` and the
+annotated tag. Artifact uploads are filename-idempotent. Rust presets preserve
+fmt/clippy/test and accept extra app names through `releaseValidationApps`.
+After publication the helper imports direct Git refs into jj, moves `main`, and
+creates an empty child before fallible network work. Exact-match reruns resume
+post-publication work automatically. Refresh and Linux jobs use stable tags;
+active/successful jobs are reused while terminal-failed jobs may be retried.
 `lib.fleet.presets.webGame` is independent of the Rust preset, whose behavior
 and compatibility alias remain unchanged. The web preset defaults to
 `package.json`, reads/stamps its JSON `version`, accepts optional `ciFmt`,

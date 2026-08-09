@@ -143,7 +143,7 @@
       pname,
       subdir ? pname,
     }: ''
-      tmp="$(mktemp)"
+      tmp="$release_tmpdir/refresh.yml"
       cat > "$tmp" <<EOF
       image: nixos/unstable
       arch: x86_64
@@ -167,7 +167,7 @@
             cd averagechris.srht.site
             nix run .#refresh-pages
       EOF
-      srht builds submit "$tmp" --secrets --note "site refresh: ${pname} $tag"
+      submit_build_once "${pname}/$tag/refresh" "$tmp" "site refresh: ${pname} $tag"
     '';
 
     mkRelease = {
@@ -184,7 +184,6 @@
       artifactPackage,
       linuxManifest ? "builds/release-linux-x86_64.yml",
       allowLinuxBuild ? true,
-      validateAfterPrepare ? false,
       # Supplying this puts the caller's pinned derivation on PATH. null keeps
       # old consumers evaluable, but their release app fails with migration
       # guidance instead of silently fetching an unapproved floating CLI.
@@ -204,55 +203,112 @@
         name = "release";
         runtimeInputs = (with pkgs; [coreutils git jujutsu nix python3]) ++ lib.optional (srhtPackage != null) srhtPackage ++ runtimeInputs;
         text = ''
-          set -euo pipefail; export TERM=dumb; repo_root="$(git rev-parse --show-toplevel 2>/dev/null || jj root)"; cd "$repo_root"
+          set -euo pipefail
+          export TERM=dumb
+          if [[ -n "''${FLEET_RELEASE_NIX:-}" ]]; then nix() { "$FLEET_RELEASE_NIX" "$@"; }; fi
+          if [[ -n "''${FLEET_RELEASE_SRHT:-}" ]]; then srht() { "$FLEET_RELEASE_SRHT" "$@"; }; fi
           ${lib.optionalString (srhtPackage == null) ''
-            srht() {
-              printf '%s\n' 'fleet release requires srhtPackage; pass fleet.packages.<system>.srht to the preset' >&2
-              return 2
-            }
+            if [[ -z "''${FLEET_RELEASE_SRHT:-}" ]]; then
+              srht() {
+                printf '%s\n' 'fleet release requires srhtPackage; pass fleet.packages.<system>.srht to the preset' >&2
+                return 2
+              }
+            fi
           ''}
-          version=""; revision="@"; validate=1; tag_release=1; build_artifact=1; upload_artifact=1; submit_refresh=1; submit_linux_build=0; allow_downgrade=0; linux_manifest=${q linuxManifest}
-          while [[ $# -gt 0 ]]; do case "$1" in --version) version="$2"; shift 2;; --revision) revision="$2"; shift 2;; --allow-downgrade) allow_downgrade=1; shift;; --skip-validate) validate=0; shift;; --skip-tag) tag_release=0; shift;; --skip-artifact) build_artifact=0; shift;; --skip-upload) upload_artifact=0; shift;; --skip-refresh) submit_refresh=0; shift;; --submit-linux-build) submit_linux_build=1; shift;; -h|--help) printf 'usage: release [--version X.Y.Z] [--allow-downgrade] [--submit-linux-build] [--skip-*]\n'; exit 0;; *) printf 'unknown argument: %s\n' "$1" >&2; exit 1;; esac; done
+          usage() {
+            cat <<'EOF'
+          usage: release --version X.Y.Z [--check] [--allow-downgrade] [--submit-linux-build]
+
+          --check               verify release readiness without editing files or publishing refs
+          --version X.Y.Z       required release version
+          --allow-downgrade     permit a lower version; the target tag must still be new
+          --submit-linux-build  submit the Linux release build after publication
+          EOF
+          }
+          version=""; check_only=0; submit_linux_build=0; allow_downgrade=0; linux_manifest=${q linuxManifest}
+          while [[ $# -gt 0 ]]; do case "$1" in --version) version="''${2:-}"; shift 2;; --check) check_only=1; shift;; --allow-downgrade) allow_downgrade=1; shift;; --submit-linux-build) submit_linux_build=1; shift;; -h|--help) usage; exit 0;; *) printf 'unknown argument: %s\n' "$1" >&2; usage >&2; exit 2;; esac; done
+          [[ -n "$version" ]] || { printf '%s\n' '--version X.Y.Z is required' >&2; exit 2; }
           ${lib.optionalString (!allowLinuxBuild) ''
             if [[ $submit_linux_build -eq 1 ]]; then printf '%s\n' '--submit-linux-build is not valid for a platform-neutral web-game release' >&2; exit 2; fi
           ''}
-          if [[ $validate -eq 1 && ${
-            if validateAfterPrepare
-            then "0"
-            else "1"
-          } -eq 1 ]]; then
-            (
-              ${validateScript}
-            ) < /dev/null
+          [[ "$version" =~ ^v?[0-9]+\.[0-9]+\.[0-9]+$ ]] || { printf 'invalid semver version: %s\n' "$version" >&2; exit 2; }
+          version="''${version#v}"; tag="v$version"
+          repo_root="$(jj root 2>/dev/null)" || { printf '%s\n' 'release requires a jj repository' >&2; exit 1; }
+          cd "$repo_root"
+          git_dir="$(jj git root 2>/dev/null)" || { printf '%s\n' 'release requires a jj Git-backed repository' >&2; exit 1; }
+          [[ -d "$git_dir" ]] || { printf 'jj Git backing directory does not exist: %s\n' "$git_dir" >&2; exit 1; }
+          git --git-dir="$git_dir" remote get-url origin >/dev/null || { printf '%s\n' 'origin remote is not configured' >&2; exit 1; }
+          [[ "$(jj log -r @ --no-graph --color=never -T 'if(empty, "1", "0")')" == 1 ]] || { printf '%s\n' 'working-copy commit @ is not empty; finish it before release' >&2; exit 1; }
+          base="$(jj log -r '@-' --no-graph --color=never -T commit_id 2>/dev/null)" || { printf '%s\n' 'cannot resolve @-' >&2; exit 1; }
+          local_main="$(jj log -r main --no-graph --color=never -T commit_id 2>/dev/null)" || { printf '%s\n' 'cannot resolve local main' >&2; exit 1; }
+          remote_main_line="$(git --git-dir="$git_dir" ls-remote --heads origin refs/heads/main)"
+          remote_main="''${remote_main_line%%$'\t'*}"
+          [[ -n "$remote_main" ]] || { printf '%s\n' 'origin main does not resolve' >&2; exit 1; }
+          [[ "$base" == "$local_main" ]] || { printf 'stale/diverged checkout: @-=%s local main=%s\n' "$base" "$local_main" >&2; exit 1; }
+          current="$(${readVersion})"
+          ALLOW_DOWNGRADE="$allow_downgrade" CURRENT="$current" REQUESTED="$version" python3 - <<'PY'
+          import os, re
+          def semver(name):
+              value = os.environ[name].removeprefix("v")
+              if not re.fullmatch(r"\d+\.\d+\.\d+", value): raise SystemExit(f"invalid {name.lower()} semver: {value}")
+              return tuple(map(int, value.split(".")))
+          if semver("REQUESTED") < semver("CURRENT") and os.environ["ALLOW_DOWNGRADE"] != "1":
+              raise SystemExit("refusing version downgrade (pass --allow-downgrade to override)")
+          PY
+          remote_tags="$(git --git-dir="$git_dir" ls-remote --tags origin)"
+          remote_tag_object="$(printf '%s\n' "$remote_tags" | python3 -c 'import sys; ref=f"refs/tags/{sys.argv[1]}"; print(next((line.split()[0] for line in sys.stdin if line.split()[1:]==[ref]),""))' "$tag")"
+          remote_tag_commit="$(printf '%s\n' "$remote_tags" | python3 -c 'import sys; ref=f"refs/tags/{sys.argv[1]}^{{}}"; print(next((line.split()[0] for line in sys.stdin if line.split()[1:]==[ref]),""))' "$tag")"
+          resume=0
+          if [[ -n "$remote_tag_object" ]]; then
+            if [[ -n "$remote_tag_commit" && "$remote_tag_commit" == "$remote_main" && "$remote_main" == "$local_main" && "$local_main" == "$base" && "''${current#v}" == "$version" ]]; then
+              resume=1
+            else
+              printf 'existing tag %s is not an exact resumable release (peeled=%s remote-main=%s local-main=%s base=%s current-version=%s)\n' "$tag" "''${remote_tag_commit:-unpeeled}" "$remote_main" "$local_main" "$base" "$current" >&2
+              exit 1
+            fi
+          elif [[ "$base" != "$remote_main" ]]; then
+            printf 'stale/diverged checkout: @-=%s origin main=%s\n' "$base" "$remote_main" >&2; exit 1
           fi
-          mutated=0
+          if [[ $resume -eq 0 ]] && git --git-dir="$git_dir" show-ref --verify --quiet "refs/tags/$tag"; then printf 'local tag exists without matching remote release: %s\n' "$tag" >&2; exit 1; fi
+          srht auth status >/dev/null
+          [[ $submit_linux_build -eq 0 || -f "$linux_manifest" ]] || { printf 'Linux manifest not found: %s\n' "$linux_manifest" >&2; exit 1; }
+          mode=release; [[ $resume -eq 1 ]] && mode=resume
+          printf 'Release plan (%s):\n  repo: %s\n  base/local/remote main: %s\n  version/tag: %s / %s\n  validation apps: %s\n  artifact: .#release-artifact (tarball + checksum)\n  remote actions: %sartifact upload, refresh%s\n' "$mode" "$repo_root" "$base" "$version" "$tag" ${q (lib.concatStringsSep ", " ciApps)} "$([[ $resume -eq 0 ]] && printf 'atomic main + annotated tag, ' || true)" "$([[ $submit_linux_build -eq 1 ]] && printf ', Linux build' || true)"
+          [[ $check_only -eq 0 ]] || exit 0
+          mutated=0; tag_created=0; published=$resume; release_tmpdir="$(mktemp -d)"
           recovery_note() { printf '%s\n' 'release aborted after version stamping — inspect with "jj diff"; discard the prep commit with "jj abandon @" if you do not want it' >&2; }
-          on_exit() { status=$?; if [[ $status -ne 0 && $mutated -eq 1 ]]; then recovery_note; fi; exit "$status"; }
+          on_exit() { status=$?; rm -rf "$release_tmpdir"; if [[ $status -ne 0 && $tag_created -eq 1 && $published -eq 0 ]]; then git --git-dir="$git_dir" tag -d "$tag" >/dev/null 2>&1 || true; jj git import >/dev/null 2>&1 || true; fi; if [[ $status -ne 0 && $mutated -eq 1 && $published -eq 0 ]]; then recovery_note; fi; exit "$status"; }
           trap on_exit EXIT
-          args=(); [[ -n "$version" ]] && args+=(--version "$version"); [[ $allow_downgrade -eq 1 ]] && args+=(--allow-downgrade); nix run .#prepare-release -- "''${args[@]}"; mutated=1
-          if [[ $validate -eq 1 && ${
-            if validateAfterPrepare
-            then "1"
-            else "0"
-          } -eq 1 ]]; then
-            (
-              ${validateScript}
-            ) < /dev/null
+          if [[ $resume -eq 0 ]]; then
+            mutated=1
+            args=(--version "$version"); [[ $allow_downgrade -eq 1 ]] && args+=(--allow-downgrade); nix run .#prepare-release -- "''${args[@]}"
+            (${validateScript}) < /dev/null
+            version="$(${readVersion})"; tag="v''${version#v}"
           fi
-          version="$(${readVersion})"; tag="v''${version#v}"
-          # An empty jj working copy is never the release target: aim at its
-          # parent (same semantics as `jj ship`) and never describe/tag it.
-          if [[ -d .jj && "$revision" == "@" && "$(jj log -r @ --no-graph --color=never -T 'if(empty, "1", "0")')" == "1" ]]; then revision="@-"; fi
-          if [[ -d .jj && "$revision" == "@" && -z "$(jj log -r @ --no-graph --color=never -T 'description.first_line()')" ]]; then jj describe -m "chore: release $tag"; fi
-          if [[ -d .jj ]]; then commit="$(jj log -r "$revision" --no-graph --color=never -T 'commit_id')"; else commit="$(git rev-parse "$revision")"; fi
-          if [[ $tag_release -eq 1 ]]; then nix run .#release-tag -- --revision "$commit"; if [[ -d .jj ]]; then jj bookmark set main --revision "$commit"; jj git push --remote origin --bookmark main; fi; fi
-          if [[ $build_artifact -eq 1 ]]; then nix build .#release-artifact --out-link result-release-artifact; fi
-          if [[ $upload_artifact -eq 1 ]]; then for f in result-release-artifact/*.tar.gz; do srht git artifact upload -r ${q srhtRepo} --rev "$tag" "$f"; srht git artifact upload -r ${q srhtRepo} --rev "$tag" "$f.sha256"; done; fi
-          if [[ $submit_refresh -eq 1 ]]; then
-            ${refreshTrigger}
+          artifact_dir="$(nix build .#release-artifact --no-link --print-out-paths)"
+          artifacts=("$artifact_dir"/*.tar.gz); [[ ''${#artifacts[@]} -eq 1 && -f "''${artifacts[0]}.sha256" ]] || { printf '%s\n' 'expected exactly one tarball and checksum' >&2; exit 1; }
+          (cd "$artifact_dir" && sha256sum -c "$(basename "''${artifacts[0]}").sha256")
+          if [[ $resume -eq 0 ]]; then
+            jj describe -m "chore: release $tag"
+            commit="$(jj log -r @ --no-graph --color=never -T commit_id)"
+            git --git-dir="$git_dir" -c tag.gpgSign=false tag -a "$tag" -m "${pname} $tag" "$commit"
+            tag_created=1
+            git --git-dir="$git_dir" push --atomic --force-with-lease="refs/heads/main:$remote_main" origin "$commit:refs/heads/main" "refs/tags/$tag:refs/tags/$tag"
+            published=1
+            jj git import
+            jj bookmark set main --revision "$commit"
+            jj new "$commit"
+          else
+            commit="$remote_tag_commit"
           fi
-          if [[ $submit_linux_build -eq 1 ]]; then srht builds submit "$linux_manifest" --secrets --note "${pname} $tag linux release" --tag "${pname}/$tag/release"; fi
-          trap - EXIT
+          existing="$(srht --json git artifact list -r ${q srhtRepo} --rev "$tag")"
+          for f in "''${artifacts[0]}" "''${artifacts[0]}.sha256"; do
+            if ARTIFACTS="$existing" NAME="$(basename "$f")" python3 -c 'import json,os,sys; data=json.loads(os.environ["ARTIFACTS"]); names=[item["filename"] for item in data["items"]]; sys.exit(0 if os.environ["NAME"] in names else 1)'; then printf 'artifact already uploaded: %s\n' "$(basename "$f")"; else srht git artifact upload -r ${q srhtRepo} --rev "$tag" "$f"; fi
+          done
+          submit_build_once() { build_tag="$1"; manifest="$2"; note="$3"; jobs="$(srht --json builds list --all --tag "$build_tag")"; if JOBS="$jobs" python3 -c 'import json,os,sys; failed={"failed","cancelled"}; statuses=[str(x["status"]).lower() for x in json.loads(os.environ["JOBS"])["items"]]; sys.exit(0 if any(s not in failed for s in statuses) else 1)'; then printf 'build already active or successful: %s\n' "$build_tag"; else srht builds submit "$manifest" --secrets --note "$note" --tag "$build_tag"; fi; }
+          ${refreshTrigger}
+          if [[ $submit_linux_build -eq 1 ]]; then submit_build_once "${pname}/$tag/linux" "$linux_manifest" "${pname} $tag linux release"; fi
+          trap - EXIT; rm -rf "$release_tmpdir"
         '';
       };
 
@@ -327,6 +383,9 @@
     ciExtraInputs ? [],
     ciFmt ? null,
     ciClippy ? null,
+    # Additional flake app names run after release preparation, after the
+    # standard Rust fmt/clippy/test gates (for example, ["ci-docs"]).
+    releaseValidationApps ? [],
     # Extra cheap static gates to compose into the ecosystem-agnostic
     # static-checks app (e.g. deny, machete, statix). These are derivations,
     # not flake app names, so running static-checks does not re-evaluate Nix.
@@ -409,7 +468,7 @@
       inherit pkgs pname srhtRepo versionFile refreshTrigger prepareRelease releaseTag srhtPackage;
       versionExpr = cargoVersionExpr;
       runtimeInputs = rustToolchain;
-      ciApps = ["ci-fmt" "ci-clippy" "ci-test"];
+      ciApps = ["ci-fmt" "ci-clippy" "ci-test"] ++ releaseValidationApps;
       artifactPackage = releaseArtifact;
     };
     defaultCiFmt = pkgs.writeShellApplication {
@@ -545,7 +604,6 @@
       inherit pkgs pname srhtRepo versionFile versionCommand refreshTrigger prepareRelease releaseTag srhtPackage;
       artifactPackage = releaseArtifact;
       allowLinuxBuild = false;
-      validateAfterPrepare = true;
       ciApps = builtins.attrNames namedCi ++ ["ci-web"];
     };
     staticChecks = pkgs.writeShellApplication {

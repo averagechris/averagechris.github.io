@@ -21,12 +21,16 @@ server.
 This repo uses the standard averagechris fleet interface:
 
 ```sh
-nix run .#prepare-release -- --version X.Y.Z
-nix run .#release-tag
-nix build .#release-artifact
 nix run .#static-checks
+nix run .#release -- --version X.Y.Z --check
 nix run .#release -- --version X.Y.Z --submit-linux-build
 ```
+
+The release command performs preparation, prepared-tree validation, artifact
+verification, atomic ref publication, upload, and refresh in that order. Do not
+run the lower-level release helpers as a routine release workflow.
+After a post-publication failure, rerun the same command: exact matching release
+state resumes idempotently, while mismatched tags or refs fail closed.
 
 `.builds/ci.yml` runs automatically on every push. `builds/release-linux-x86_64.yml`
 is explicit-submit only; do not move it to `.builds/`.

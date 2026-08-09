@@ -5,10 +5,8 @@
 #
 # Repos may set `ecosystem = "rust"` or `ecosystem = "go"`; omitted means rust.
 #
-#   nix run .#prepare-release -- --version X.Y.Z
-#   nix run .#release-tag
-#   nix build .#release-artifact
-#   nix run .#release -- --version X.Y.Z [--submit-linux-build] [--skip-*]
+#   nix run .#release -- --version X.Y.Z [--submit-linux-build]
+#   nix run .#release -- --version X.Y.Z --check
 #   nix run .#ci-fmt | ci-clippy/ci-vet | static-checks | ci-test
 #
 # plus: annotated vX.Y.Z tags with attached sr.ht artifacts, release manifest at
