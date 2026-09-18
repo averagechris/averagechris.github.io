@@ -113,7 +113,7 @@ def fingerprint(root: pathlib.Path, *, publisher_sha_override: str | None = None
     """Latest tag + main sha + which platform artifacts exist on the latest tag.
     Artifacts are part of the fingerprint so a late-arriving Linux build still
     triggers a republish of an already-published tag."""
-    fleet = {r["pages_subdir"]: r for r in tomllib.loads((root / "fleet.toml").read_text())["repos"]}
+    fleet = {r["pages_subdir"]: r for r in tomllib.loads((root / "fleet-site.toml").read_text())["repos"]}
     # Only canonical site projects can appear in state.json. Fleet-only repos
     # are maintenance inventory, not render inputs, and previously made every
     # unchanged refresh look different from the live fingerprint.
@@ -211,7 +211,7 @@ def wait_for_trigger(root: pathlib.Path) -> None:
     project, tag, expected_sha = os.environ.get("TRIGGER_PROJECT"), os.environ.get("TRIGGER_TAG"), os.environ.get("TRIGGER_SHA")
     if not project or not tag: return
     if not expected_sha: raise SystemExit("TRIGGER_SHA is required with TRIGGER_PROJECT/TRIGGER_TAG")
-    repos = [{**r, "kind": "native"} for r in tomllib.loads((root / "fleet.toml").read_text())["repos"]]
+    repos = [{**r, "kind": "native"} for r in tomllib.loads((root / "fleet-site.toml").read_text())["repos"]]
     games = [{**g, "kind": "web_game", "pages_subdir": f"games/{g['slug']}", "name": g["slug"]} for g in tomllib.loads((root / "site-data" / "games.toml").read_text()).get("games", [])]
     entry = next((r for r in repos + games if project in (r["pages_subdir"], r["name"], r.get("srht_repo"))), None)
     repo = (entry.get("srht_repo") or entry["name"]) if entry else project

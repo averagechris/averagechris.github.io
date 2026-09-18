@@ -151,7 +151,7 @@ class RefreshTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = pathlib.Path(tmp)
             (root / "site-data").mkdir()
-            (root / "fleet.toml").write_text(
+            (root / "fleet-site.toml").write_text(
                 '[[repos]]\nname="shown"\npages_subdir="shown"\nsrht_repo="shown"\n'
                 '[[repos]]\nname="fleet-only"\npages_subdir="fleet-only"\nsrht_repo="fleet-only"\n'
             )
@@ -276,7 +276,7 @@ class RefreshTests(unittest.TestCase):
     def test_trigger_waits_for_game_artifact_and_checksum(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = pathlib.Path(tmp)
-            (root / "fleet.toml").write_text("repos=[]\n")
+            (root / "fleet-site.toml").write_text("repos=[]\n")
             (root / "site-data").mkdir()
             (root / "site-data/games.toml").write_text(
                 '[[games]]\nslug="palabra"\nsrht_repo="palabra"\nartifact_prefix="palabra"\n'
@@ -293,7 +293,7 @@ class RefreshTests(unittest.TestCase):
     def test_trigger_rejects_wrong_peeled_commit(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = pathlib.Path(tmp)
-            (root / "fleet.toml").write_text("repos=[]\n")
+            (root / "fleet-site.toml").write_text("repos=[]\n")
             (root / "site-data").mkdir()
             (root / "site-data/games.toml").write_text('[[games]]\nslug="palabra"\nsrht_repo="palabra"\nartifact_prefix="palabra"\n')
             env = {"TRIGGER_PROJECT": "palabra", "TRIGGER_TAG": "v1.0.0", "TRIGGER_SHA": "expected"}

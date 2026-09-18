@@ -38,14 +38,14 @@ nix run .#serve
 nix run .#publish-pages
 ```
 
-The fleet registry is `fleet.toml`. It records the release-tier repos, their local paths, Pages subdirectories, version files, artifact prefixes, upstream forks when relevant, and repo-specific footguns. Current entries include `linear-cli`, `slack-rs`, `granola-cli`, `ctx`, `starship-jj`, and `gander`. The registry is also what `nix run .#fleet-status` uses to check whether the standard interface is present:
+The operational registry lives in [averagechris/fleet](https://github.com/averagechris/fleet). It records the release-tier repos, local paths, version files, artifact prefixes, upstream forks, and repo-specific footguns. This website checks in only a generated acquisition projection. The owner repo also provides `fleet-status`:
 
 ```sh
-nix run .#fleet-status
-nix run .#fleet-status -- --nix
+nix run github:averagechris/fleet#fleet-status
+nix run github:averagechris/fleet#fleet-status -- --nix
 ```
 
-Maintenance is orchestrated from the homepage repo, but not blindly applied from there. For cross-repo chores, I dispatch one agent per repo into an isolated jj workspace, usually under `/Users/chris/projects/.maint`. Agents are not allowed to push, tag, publish Pages, submit builds, or move bookmarks. They leave a described change. A human reviews the diff, merges it, and runs the release from the default workspace.
+Maintenance is orchestrated from the fleet owner repo, but not blindly applied from there. For cross-repo chores, I dispatch one agent per repo into an isolated jj workspace, usually under `/Users/chris/projects/.maint`. Agents are not allowed to push, tag, publish Pages, submit builds, or move bookmarks. They leave a described change. A human reviews the diff, merges it, and runs the release from the default workspace.
 
 ```sh
 cd <repo>

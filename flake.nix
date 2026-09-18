@@ -9,51 +9,25 @@
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
     flake-utils.url = "github:numtide/flake-utils";
-    # Approved fleet channel. Advance this release tag only together with the
-    # x86_64-linux flake-output-cache warm.
-    srht.url = "git+https://git.sr.ht/~averagechris/srht?ref=refs/tags/v0.9.0";
+    # Compatibility forwarding and the approved transitional srht channel.
+    fleet.url = "github:averagechris/fleet";
   };
 
   outputs = {
     self,
     nixpkgs,
     flake-utils,
-    srht,
+    fleet,
   }:
     {
-      lib = import ./nix/fleet-apps.nix {lib = nixpkgs.lib;};
-      templates.rust-cli = {
-        path = ./templates/rust-cli;
-        description = "Minimal Rust CLI wired to averagechris fleet release conventions. Use .#new-project for a named/idempotent scaffold.";
-      };
+      # Temporary compatibility layer for consumers of the site's old lib output.
+      lib = fleet.lib;
     }
     // flake-utils.lib.eachDefaultSystem (
       system: let
         pkgs = nixpkgs.legacyPackages.${system};
-        srhtPackage = srht.packages.${system}.srht;
+        srhtPackage = fleet.packages.${system}.srht;
         python = pkgs.python3;
-        webGameFixtureWeb = pkgs.runCommand "web-game-fixture-web" {} ''
-          mkdir -p "$out/assets"
-          printf '<!doctype html><title>fixture</title>\n' > "$out/index.html"
-          printf 'fixture\n' > "$out/assets/game.js"
-        '';
-        webGameFixtureCi = name:
-          pkgs.writeShellApplication {
-            inherit name;
-            text = "true";
-          };
-        webGameFixture = self.lib.fleet.presets.webGame {
-          inherit pkgs;
-          self = ./tests/fixtures/web-game;
-          pname = "web-game-fixture";
-          webPackage = webGameFixtureWeb;
-          ciFmt = webGameFixtureCi "fixture-fmt";
-          ciTest = webGameFixtureCi "fixture-test";
-          ciCheck = webGameFixtureCi "fixture-check";
-          prepareVerify = null;
-          inherit srhtPackage;
-        };
-
         mkApp = name: script: {
           type = "app";
           program = pkgs.lib.getExe (
@@ -133,21 +107,6 @@
           '';
         };
 
-        newProjectScript = pkgs.writeShellApplication {
-          name = "new-project";
-          runtimeInputs = [
-            pkgs.python3
-            pkgs.jujutsu
-            pkgs.cargo
-            pkgs.nix
-            srhtPackage
-          ];
-          text = ''
-            export PYTHONPATH=${./scripts}:''${PYTHONPATH:-}
-            exec python3 ${./scripts/new_project.py} "$@"
-          '';
-        };
-
         nixFormatter = pkgs.writeShellApplication {
           name = "alejandra";
           runtimeInputs = [pkgs.alejandra];
@@ -211,40 +170,8 @@
             EOF
           '';
       in {
-        checks.web-game-preset = assert builtins.all (name: builtins.hasAttr name webGameFixture.apps) [
-          "prepare-release"
-          "release-tag"
-          "release"
-          "ci-fmt"
-          "ci-test"
-          "ci-check"
-          "ci-web"
-          "static-checks"
-        ];
-          pkgs.runCommand "check-web-game-preset" {
-            nativeBuildInputs = with pkgs; [coreutils git gnugrep gnutar gzip jujutsu python3];
-          } ''
-              cp -R ${./tests/fixtures/web-game} work
-              chmod -R u+w work
-              cd work
-            ${webGameFixture.apps.release.program} --help | grep -q -- '--check'
-            RELEASE_PROGRAM=${webGameFixture.apps.release.program} python3 ${./tests/release_behavior.py}
-            ${webGameFixture.apps.prepare-release.program} --version 1.2.4
-            python3 -c 'import json; assert json.load(open("package.json"))["version"] == "1.2.4"'
-            grep -q 'web-game-fixture-v1.2.4-web.tar.gz' builds/release-web.yml
-            grep -q '^## v1.2.4 - ' CHANGELOG.md
-            if ${webGameFixture.apps.prepare-release.program} --version 1.2.3; then
-              printf 'prepare-release unexpectedly allowed a downgrade\n' >&2
-              exit 1
-            fi
-              artifact=${webGameFixture.packages.release-artifact}
-              (cd "$artifact" && sha256sum -c web-game-fixture-v1.2.3-web.tar.gz.sha256)
-              tar -tzf "$artifact/web-game-fixture-v1.2.3-web.tar.gz" | grep -q '^web-game-fixture-v1.2.3-web/index.html$'
-              touch "$out"
-          '';
-
         checks.srht-channel = assert self.packages.${system}.srht == srhtPackage;
-        assert self.apps.${system}.srht.program == srht.apps.${system}.srht.program;
+        assert self.apps.${system}.srht.program == fleet.apps.${system}.srht.program;
           pkgs.runCommand "check-approved-srht-channel" {nativeBuildInputs = [pkgs.gnugrep];} ''
             grep -Fx ${pkgs.lib.escapeShellArg (toString srhtPackage)} ${flakeOutputCache}/nix-support/cache-paths
             touch "$out"
@@ -252,7 +179,7 @@
 
         apps = {
           # Re-export the input app verbatim; do not rebuild it with site nixpkgs.
-          srht = srht.apps.${system}.srht;
+          srht = fleet.apps.${system}.srht;
 
           build-pages = {
             type = "app";
@@ -274,24 +201,9 @@
             exec python3 scripts/add_project.py "$@"
           '';
 
-          new-project = {
-            type = "app";
-            program = pkgs.lib.getExe newProjectScript;
-          };
-
           note = mkApp "note" ''
             ${repoScripts}
             exec python3 scripts/note.py "$@"
-          '';
-
-          fleet-status = mkApp "fleet-status" ''
-            ${repoScripts}
-            exec python3 scripts/fleet_status.py "$@"
-          '';
-
-          fleet-tracker-audit = mkApp "fleet-tracker-audit" ''
-            ${repoScripts}
-            exec python3 scripts/fleet_tracker_audit.py "$@"
           '';
 
           serve = mkApp "serve" ''
@@ -325,7 +237,6 @@
           ];
         };
 
-        packages.new-project = newProjectScript;
         # Re-export the approved input derivation verbatim. Consumer projects
         # may pass this to fleet presets as `srhtPackage`.
         packages.srht = srhtPackage;

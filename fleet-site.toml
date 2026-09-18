@@ -1,0 +1,73 @@
+# Generated site-facing projection of averagechris/fleet/fleet.toml.
+# Regenerate with: nix run github:averagechris/fleet#site-registry -- --output fleet-site.toml
+# Operational fields intentionally do not belong in this repository.
+
+[[repos]]
+name = "ctx"
+pages_subdir = "ctx"
+srht_repo = "ctx"
+artifact_prefix = "ctx"
+binaries = ["ctx"]
+
+[[repos]]
+name = "gander"
+pages_subdir = "gander"
+srht_repo = "gander"
+artifact_prefix = "gander"
+binaries = ["gander"]
+
+[[repos]]
+name = "granola-cli"
+pages_subdir = "granola-cli"
+srht_repo = "granola-cli"
+artifact_prefix = "granola-cli"
+binaries = ["granola"]
+
+[[repos]]
+name = "hister"
+pages_subdir = "hister"
+srht_repo = "hister"
+artifact_prefix = "hister"
+binaries = ["hister"]
+
+[[repos]]
+name = "linear-cli"
+pages_subdir = "linear-cli"
+srht_repo = "linear-cli"
+artifact_prefix = "linear-cli"
+binaries = ["linear"]
+
+[[repos]]
+name = "rdny"
+pages_subdir = "rdny"
+srht_repo = "rdny"
+artifact_prefix = "rdny"
+binaries = ["rdny"]
+
+[[repos]]
+name = "sideshow"
+pages_subdir = "sideshow"
+srht_repo = "sideshow"
+artifact_prefix = "sideshow"
+binaries = ["sideshow"]
+
+[[repos]]
+name = "slack-rs"
+pages_subdir = "slack"
+srht_repo = "slack"
+artifact_prefix = "slack"
+binaries = ["slack"]
+
+[[repos]]
+name = "starship-jj"
+pages_subdir = "starship-jj"
+srht_repo = "starship-jj"
+artifact_prefix = "starship-jj"
+binaries = ["starship-jj"]
+
+[[repos]]
+name = "workctl"
+pages_subdir = "workctl"
+srht_repo = "workctl"
+artifact_prefix = "workctl"
+binaries = ["workctl", "workd"]

@@ -1,79 +1,11 @@
 # averagechris.srht.site
 
-## Shared release tooling
-
-Fleet projects consume `lib.mkFleetApps` (an alias for the Rust preset at
-`lib.fleet.presets.rust`) from this flake to expose the standard one-command
-`release` flow plus CI apps and lower-level `prepare-release`, `release-tag`,
-and `release-artifact` building blocks without copying scripts. The shared
-release flow is built from composable `lib.fleet.core` helpers, creates
-annotated tags, uploads release tarballs as sr.ht tag artifacts, and submits a
-SourceHut build that runs this site's `refresh-pages` publisher.
-
-`nix run .#release -- --version X.Y.Z --check` uses read-only remote queries and
-performs the same fail-fast readiness checks as a release without changing jj
-operations, local refs, files, or remote refs. A normal run requires an empty jj working-copy commit whose
-parent, local `main`, and `main@origin` agree; it then prepares, runs all gates
-on the prepared tree, verifies the artifact/checksum, and atomically publishes
-`main` plus the annotated tag with a remote-main lease. Rust consumers can add
-prepared-tree gates such as docs with `releaseValidationApps = [ "ci-docs" ];`.
-If publication succeeded but upload or build submission failed, rerun the exact
-same release command. An automatic resume is allowed only when the annotated
-tag's peeled commit, remote main, local main/checkout, and requested/current
-version all match. Resume rebuilds and verifies the artifact, skips preparation
-and ref publication, and retries filename-idempotent uploads and tagged builds;
-any mismatch fails closed.
-
-This flake is also the approved fleet channel for the `srht` CLI. It re-exports
-the release-pinned input unchanged as `packages.${system}.srht` and
-`apps.${system}.srht`; it is not rebuilt against this site's nixpkgs. Consumer
-flakes pass the package into a preset:
-
-```nix
-fleet.lib.fleet.presets.rust {
-  inherit pkgs self;
-  pname = "example";
-  srhtPackage = fleet.packages.${system}.srht;
-}
-```
-
-Static release manifests invoke the same approved package with
-`nix run --inputs-from . fleet#srht -- ...`. Projects update only their `fleet`
-input; this site's lock owns the srht revision. The channel pin advances only
-with `.#flake-output-cache` warming its x86_64-linux closure in Cachix—it is an
-approved channel, not an unpinned “latest”.
-
-Browser-game repositories use ecosystem-neutral `lib.fleet.presets.webGame`.
-It reads and stamps `version` in `package.json`, accepts the caller's own CI
-derivations, and emits one platform-neutral `<name>-vX.Y.Z-web.tar.gz` plus
-`.sha256`. Pass the derivation whose root is the finished static site as
-`webPackage`; there are no Cargo, Rust, Node, pnpm, or Vite assumptions inside
-the preset. `--submit-linux-build` is intentionally rejected.
-
-Palabra's flake-parts `perSystem` interface is:
-
-```nix
-let
-  game = fleet.lib.fleet.presets.webGame {
-    inherit pkgs self;
-    pname = "palabra";
-    subdir = "games/palabra";
-    srhtRepo = "palabra";
-    # Palabra owns these pnpm/Vite derivations. The preset only consumes them.
-    webPackage = config.packages.web; # dist copied to $out; index.html at root
-    ciFmt = config.packages.ci-fmt;
-    ciTest = config.packages.ci-test;
-    ciCheck = config.packages.ci-typecheck;
-  };
-in {
-  packages = game.packages;
-  apps = game.apps;
-}
-```
-
-This exposes derivation `packages.release-artifact` and apps `prepare-release`,
-`release-tag`, `release`, `ci-fmt`, `ci-test`, `ci-check`, `ci-web`, and
-`static-checks`. Omit any caller CI derivation that Palabra does not need.
+Fleet release tooling and the operational registry now live in
+[`averagechris/fleet`](https://github.com/averagechris/fleet). This flake pins
+that repository and temporarily forwards its `lib` output so existing consumers
+of `lib.fleet.core`, `lib.fleet.presets.rust`, and `lib.mkFleetApps` keep working.
+The website retains only `fleet-site.toml`, the acquisition fields needed to
+render project pages.
 
 The root homepage for <https://averagechris.srht.site/>: an about-me plus a
 directory of my projects, each linking to its downloads page at
@@ -94,12 +26,6 @@ milestone status.
 ## Usage
 
 ```sh
-# bootstrap a new Rust CLI/fleet project from that project directory
-nix run --accept-flake-config git+https://git.sr.ht/~averagechris/averagechris.srht.site#new-project -- --description "A SourceHut CLI"
-
-# or from this checkout, target an explicit project directory
-nix run .#new-project -- --dir ../srht --description "A SourceHut CLI"
-
 # add a new project card
 nix run .#add-project -- my-project --description "What it does"
 
@@ -158,19 +84,7 @@ the checked-in manifest synchronized with `package.json`; the fixture at
 stamped. Projects using the standard `release` app do not need a second
 tag-triggered release job—the app performs the same build/upload/refresh order.
 
-`new-project` writes public `.averagechris-project.toml` metadata but does not
-edit this site's `fleet.toml` or `site-data/projects.toml`; site enrollment is a manual
-follow-up for now. It also documents the shared SourceHut tracker
-<https://todo.sr.ht/~averagechris/projects>, follows the `repo:<name>` issue
-label convention in generated README/AGENTS/project metadata/docs, and
-idempotently creates that label with `srht todo labels create` when needed.
-
-To audit existing fleet repos against the tracker convention without mutating
-SourceHut, run:
-
-```sh
-nix run .#fleet-tracker-audit
-```
+Project bootstrap and tracker audits are provided by `averagechris/fleet`.
 
 Pushing to this repo also republishes the site via `.builds/pages.yml`.
 `.builds/refresh-pages.yml` can be submitted by an external scheduler to run
@@ -180,7 +94,8 @@ only when the durable sources changed.
 ## Files
 
 - `site-data/site.toml` — site metadata (about, links, domain)
-- `site-data/projects.toml` — project registry; fleet release mechanics stay in `fleet.toml`
+- `site-data/projects.toml` — public project presentation and routing
+- `fleet-site.toml` — generated site-facing acquisition projection from `averagechris/fleet`
 - `site-data/games.toml` — browser-game registry and immutable web artifact contract
 - `site-data/pages/` — root-owned page TOML sidecars + Markdown/HTML bodies rendered to `/<slug>/`
 - `site-data/notes/` — published note TOML sidecars + bodies rendered to `/notes/<slug>/`

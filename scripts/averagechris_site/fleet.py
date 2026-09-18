@@ -96,8 +96,20 @@ def semver_key(tag: str) -> tuple[int, int, int]:
 
 
 def load_fleet(repo: pathlib.Path) -> dict[str, dict]:
-    data = tomllib.loads((repo / "fleet.toml").read_text())
-    return {r["pages_subdir"]: r for r in data.get("repos", []) if r.get("pages_subdir")}
+    path = repo / "fleet-site.toml"
+    data = tomllib.loads(path.read_text())
+    allowed = {"name", "pages_subdir", "srht_repo", "artifact_prefix", "binaries"}
+    required = {"name", "pages_subdir", "srht_repo", "artifact_prefix"}
+    result: dict[str, dict] = {}
+    for row in data.get("repos", []):
+        missing = required - row.keys()
+        extra = row.keys() - allowed
+        if missing or extra:
+            fail(f"{path}: invalid site registry row {row.get('name', '<unnamed>')}: missing={sorted(missing)}, extra={sorted(extra)}")
+        if row["pages_subdir"] in result:
+            fail(f"{path}: duplicate pages_subdir {row['pages_subdir']}")
+        result[row["pages_subdir"]] = row
+    return result
 
 
 def load_release_artifacts(repo: pathlib.Path) -> tuple[dict[str, str], dict[str, bool]]:

@@ -15,7 +15,6 @@ import argparse
 import json
 import pathlib
 import shutil
-import subprocess
 import sys
 import tarfile
 import tomllib
@@ -26,12 +25,6 @@ from averagechris_site.data import load_site_data
 from averagechris_site.fleet import acquire_fleet_data, load_fleet_json, write_fleet_json
 from averagechris_site.paths import repo_root
 from averagechris_site.zola import render_zola_site
-
-RELEASE_DATES_HEADER = """# Cache of release tag dates, updated automatically by build-pages when
-# local fleet repos are available. Safe to commit; CI reads it as-is.
-[dates]
-"""
-
 
 def fail(message: str) -> "sys.NoReturn":
     raise SystemExit(f"error: {message}")
@@ -55,39 +48,10 @@ def load_release_dates(repo: pathlib.Path) -> dict[str, str]:
     return dict(tomllib.loads(path.read_text()).get("dates", {}))
 
 
-def fleet_by_subdir(repo: pathlib.Path) -> dict[str, str]:
-    path = repo / "fleet.toml"
-    if not path.exists():
-        return {}
-    return {
-        r["pages_subdir"]: r["local"]
-        for r in tomllib.loads(path.read_text()).get("repos", [])
-        if r.get("pages_subdir") and r.get("local")
-    }
-
-
-def update_release_dates(repo: pathlib.Path, meta: dict[str, dict]) -> dict[str, str]:
-    dates = load_release_dates(repo)
-    fleet = fleet_by_subdir(repo)
-    changed = False
-    for subdir, m in meta.items():
-        key = f"{subdir}/{m['version']}"
-        if key in dates or subdir not in fleet:
-            continue
-        result = subprocess.run(
-            ["git", "-C", fleet[subdir], "log", "-1", "--format=%cs", f"refs/tags/{m['version']}"],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.DEVNULL,
-            text=True,
-        )
-        if result.returncode == 0 and result.stdout.strip():
-            dates[key] = result.stdout.strip()
-            changed = True
-    if changed:
-        body = RELEASE_DATES_HEADER + "".join(f'"{k}" = "{dates[k]}"\n' for k in sorted(dates))
-        (repo / "release-dates.toml").write_text(body)
-        print("updated release-dates.toml with learned tag dates; commit it with this change")
-    return dates
+def update_release_dates(repo: pathlib.Path, _meta: dict[str, dict]) -> dict[str, str]:
+    # The site projection deliberately excludes operational local checkout
+    # paths. Release dates remain durable, explicitly refreshed website state.
+    return load_release_dates(repo)
 
 
 def assemble_site(repo: pathlib.Path, out_dir: pathlib.Path, site_dir: pathlib.Path, state: dict) -> None:

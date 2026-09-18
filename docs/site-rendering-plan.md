@@ -112,7 +112,7 @@ Tasks:
 - Decide the minimal metadata required for every project: path, name,
   description, repo, tier, downloads flag, extra links, and any future card
   presentation hints.
-- Keep existing fleet metadata authoritative for release-tier behavior. Do not
+- Keep `averagechris/fleet` authoritative for release-tier behavior. Do not
   duplicate release mechanics into Zola front matter.
 - Write a schema document or checked loader that rejects ambiguous/missing
   required metadata before rendering.

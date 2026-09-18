@@ -1,5 +1,5 @@
 # Project registry for https://averagechris.srht.site/.
-# Fleet release mechanics stay in fleet.toml.
+# Release mechanics live in averagechris/fleet; acquisition aliases are in fleet-site.toml.
 
 [[projects]]
 path = "linear-cli"

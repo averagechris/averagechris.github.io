@@ -69,7 +69,7 @@ Top-level fields:
   fetched docs page filenames copied under that project path.
 - `projects`: object keyed by project path with the complete fleet facts needed
   for a project downloads page and refresh fingerprinting:
-  - `project`: project metadata copied from `fleet.toml` plus the public
+  - `project`: acquisition metadata copied from `fleet-site.toml` plus the public
     description from `site-data/projects.toml` (`name`, `pages_subdir`,
     `srht_repo`, `artifact_prefix`, optional `binaries`, and related fleet
     settings needed by the downloads page renderer).
@@ -89,7 +89,7 @@ Top-level fields:
   `play_url`, and one `kind = web_game` artifact record. Unreleased games remain
   visible on the index as release-pending but have no play URL.
 - `release_dates`: object keyed as `project-path/version` with ISO release dates
-  learned from local fleet checkouts or read from `release-dates.toml`.
+  read from the website-owned `release-dates.toml` cache.
 - `release-artifacts.toml`: committed cache of immutable artifact sha256s and known-absent older artifacts, refreshed by `build-pages`.
 - `state`: exact assembly payload written to published `/state.json`, including
   volatile `generated_at` and `trigger` metadata. Renderers should not need this
@@ -144,7 +144,8 @@ input; the durable source of truth stays in `site-data/` and
 
 ## Shared fleet tooling
 
-`nix/fleet-apps.nix` exports `lib.fleet.core` plus language presets. The core
+Shared release tooling lives in `averagechris/fleet`. This flake pins that repo
+and temporarily forwards its `lib` output. The core
 contains the standardized release pieces: semver validation, CHANGELOG stamping,
 release manifest artifact-name rewrites, annotated release tags, reproducible
 tarballs, sr.ht artifact upload orchestration, and site refresh trigger
