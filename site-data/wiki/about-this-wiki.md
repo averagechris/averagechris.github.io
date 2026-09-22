@@ -1,4 +1,4 @@
-This wiki collects evergreen how-tos and project docs for the averagechris.srht.site fleet.
+This wiki collects evergreen how-tos and project docs for the averagechris.github.io fleet.
 
 Site-wide pages live here. Per-project entries live in each repository under `docs/wiki/` and are aggregated into stable `/wiki/<slug>/` URLs.
 

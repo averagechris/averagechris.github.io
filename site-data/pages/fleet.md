@@ -11,7 +11,7 @@ nix run .#ci-fmt / ci-clippy / ci-test         # lint gates; repos may add extra
 `prepare-release`, `release-tag`, and `release-artifact` remain lower-level
 building blocks; routine releases use the single `release` command above.
 
-That gives every project the same knobs: prepare a version, tag it, build a reproducible artifact, or run the whole release path. The release app uploads SourceHut tag artifacts and submits a root-site refresh instead of publishing Pages from each repo. The CI gates are also flake apps, because if a command matters, I want it named and reproducible instead of hiding in somebody's tab history.
+That gives every project the same knobs: prepare a version, tag it, build a reproducible artifact, or run the whole release path. The release app publishes release assets through the repository's configured provider and submits a root-site refresh instead of publishing Pages from each repo. The CI gates are also flake apps, because if a command matters, I want it named and reproducible instead of hiding in somebody's tab history.
 
 The conventions are equally plain: conventional commits, a `CHANGELOG.md` with a `## Unreleased` section, `vX.Y.Z` tags, and jj-first version control. The SourceHut Linux release manifest lives at `builds/release-linux-x86_64.yml`, not under `.builds/`, so it only runs when explicitly submitted:
 
@@ -21,9 +21,9 @@ hut builds submit builds/release-linux-x86_64.yml
 
 Release artifacts are built through Nix and published with checksums. The normal output is a tarball plus a sidecar `.sha256`, and the downloads page also exposes a `manifest.json` with per-artifact hashes. I like binaries that can be downloaded without installing a package manager, but I also like knowing exactly which pile of bytes arrived. Radical platform.
 
-The website has one important SourceHut Pages wrinkle: this repo is now the only publisher for `averagechris.srht.site`. A root publish replaces the whole site. Not updates. Replaces. Computers remain a trust exercise with invoices.
+The website has one important Pages wrinkle: this repo is the only publisher for `averagechris.github.io`. A root publish replaces the whole site. Not updates. Replaces. Computers remain a trust exercise with invoices.
 
-So fleet repos publish durable inputs instead of Pages: annotated semver tags, tag artifacts, `CHANGELOG.md`, and selected allowlisted optional `docs/pages/*.html` files from pinned main SHAs. The homepage builder resolves those inputs, hosts recent artifacts under each project subdirectory, renders downloads/changelog pages, copies optional project docs, writes `manifest.json`, and publishes one complete root tarball.
+So fleet repos publish durable inputs instead of Pages: annotated semver tags, provider release assets, `CHANGELOG.md`, and selected allowlisted optional `docs/pages/*.html` files from pinned main SHAs. The homepage builder resolves those inputs, hosts recent artifacts under each project subdirectory, renders downloads/changelog pages, copies optional project docs, writes `manifest.json`, and publishes one complete site artifact. The old SourceHut publisher remains available only for rollback.
 
 ```sh
 # add a new project card / downloads subdirectory

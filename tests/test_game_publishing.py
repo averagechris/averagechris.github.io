@@ -14,7 +14,7 @@ import unittest
 from unittest import mock
 
 from averagechris_site.data import Game, SiteDataError, _load_games
-from averagechris_site.fleet import acquire_game, ls_remote, parse_checksum, safe_extract_game
+from averagechris_site.fleet import acquire_game, ls_remote, parse_checksum, remote_raw, safe_extract_game
 from averagechris_site.zola import build_template_data, render_zola_site
 import refresh_pages
 
@@ -147,6 +147,35 @@ class BundleTests(unittest.TestCase):
 
 
 class RefreshTests(unittest.TestCase):
+    def test_github_acquisition_uses_github_for_refs_and_raw_files(self) -> None:
+        with mock.patch("averagechris_site.fleet.run_text", return_value="main-sha\trefs/heads/main\n") as run_text:
+            self.assertEqual(ls_remote("averagechris/gander", provider="github"), ({}, "main-sha"))
+        self.assertEqual(run_text.call_args.args[0][-1], "https://github.com/averagechris/gander.git")
+        self.assertEqual(
+            remote_raw({"provider": "github", "github_repo": "averagechris/gander"}, "abc", "docs/pages/demo.html"),
+            "https://raw.githubusercontent.com/averagechris/gander/abc/docs/pages/demo.html",
+        )
+
+    def test_github_release_ignores_drafts_and_lists_published_assets(self) -> None:
+        releases = [
+            {"tag_name": "v2.0.0", "draft": True, "assets": []},
+            {"tag_name": "v1.2.3", "draft": False, "assets": [
+                {"name": "gander-v1.2.3-x86_64-linux.tar.gz", "browser_download_url": "https://assets/archive"},
+                {"name": "gander-v1.2.3-x86_64-linux.tar.gz.sha256", "browser_download_url": "https://assets/checksum"},
+            ]},
+        ]
+        refs = [
+            {"ref": "refs/tags/v1.2.3", "object": {"sha": "tag-object", "type": "tag"}},
+            {"ref": "refs/tags/v2.0.0", "object": {"sha": "draft-tag-object", "type": "tag"}},
+        ]
+        responses = [json.dumps(releases), json.dumps(refs), json.dumps({"object": {"sha": "tag-commit"}}), json.dumps({"sha": "main-sha"})]
+        with mock.patch.object(refresh_pages.subprocess, "check_output", side_effect=responses) as check_output:
+            tags, latest, main, tag_shas, _, assets = refresh_pages.github_release("averagechris/gander")
+        self.assertEqual((tags, latest, main), (["v1.2.3"], "v1.2.3", "main-sha"))
+        self.assertEqual(tag_shas, {"v1.2.3": "tag-object"})
+        self.assertIn("gander-v1.2.3-x86_64-linux.tar.gz", assets["v1.2.3"])
+        self.assertEqual(check_output.call_count, 4)
+
     def test_fingerprint_uses_only_canonical_site_projects(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = pathlib.Path(tmp)
@@ -199,6 +228,7 @@ class RefreshTests(unittest.TestCase):
         fingerprint_call.assert_called_once_with(
             mock.ANY,
             publisher_sha_override="a" * 40,
+            publisher_provider="sourcehut",
         )
 
     def test_controlled_mismatch_keeps_before_build_after_checks_and_cannot_publish(self) -> None:
@@ -273,6 +303,28 @@ class RefreshTests(unittest.TestCase):
             self.assertEqual(refresh_pages.publisher_revision(pathlib.Path(".")), "remote")
         self.assertEqual(check_output.call_args_list[1].args[0][:4], ["jj", "log", "-r", "@-"])
 
+    def test_pages_publisher_revision_checks_github_main(self) -> None:
+        with mock.patch.object(refresh_pages.subprocess, "check_output", return_value="local\n"), \
+             mock.patch.object(refresh_pages, "github_main", return_value="local") as github_main, \
+             mock.patch.object(refresh_pages, "ls_refs") as ls_refs:
+            self.assertEqual(refresh_pages.publisher_revision(pathlib.Path("."), provider="github"), "local")
+        github_main.assert_called_once_with("averagechris/averagechris.github.io")
+        ls_refs.assert_not_called()
+
+    def test_github_main_uses_token_when_available(self) -> None:
+        with mock.patch.dict(os.environ, {"GITHUB_TOKEN": "test-token"}, clear=True), \
+             mock.patch.object(refresh_pages.subprocess, "check_output", return_value='{"sha":"main"}') as check_output:
+            self.assertEqual(refresh_pages.github_main("averagechris/averagechris.github.io"), "main")
+        command = check_output.call_args.args[0]
+        self.assertIn("-H", command)
+        self.assertIn("Authorization: Bearer test-token", command)
+
+    def test_github_main_remains_public_without_token(self) -> None:
+        with mock.patch.dict(os.environ, {}, clear=True), \
+             mock.patch.object(refresh_pages.subprocess, "check_output", return_value='{"sha":"main"}') as check_output:
+            self.assertEqual(refresh_pages.github_main("averagechris/averagechris.github.io"), "main")
+        self.assertNotIn("Authorization: Bearer", " ".join(check_output.call_args.args[0]))
+
     def test_trigger_waits_for_game_artifact_and_checksum(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = pathlib.Path(tmp)
@@ -281,9 +333,10 @@ class RefreshTests(unittest.TestCase):
             (root / "site-data/games.toml").write_text(
                 '[[games]]\nslug="palabra"\nsrht_repo="palabra"\nartifact_prefix="palabra"\n'
             )
-            env = {"TRIGGER_PROJECT": "palabra", "TRIGGER_TAG": "v1.0.0", "TRIGGER_SHA": "commit"}
+            commit = "c" * 40
+            env = {"TRIGGER_PROJECT": "palabra", "TRIGGER_TAG": "v1.0.0", "TRIGGER_SHA": commit}
             with mock.patch.dict(os.environ, env, clear=False), \
-                 mock.patch.object(refresh_pages, "ls_refs", return_value=(["v1.0.0"], "v1.0.0", "main", {"v1.0.0": "tag"}, {"v1.0.0": "commit"})), \
+                 mock.patch.object(refresh_pages, "ls_refs", return_value=(["v1.0.0"], "v1.0.0", "main", {"v1.0.0": "tag"}, {"v1.0.0": commit})), \
                  mock.patch.object(refresh_pages, "probe", return_value=True) as probe, \
                  mock.patch.object(refresh_pages, "checksum", return_value="a" * 64) as checksum:
                 refresh_pages.wait_for_trigger(root)
@@ -296,8 +349,8 @@ class RefreshTests(unittest.TestCase):
             (root / "fleet-site.toml").write_text("repos=[]\n")
             (root / "site-data").mkdir()
             (root / "site-data/games.toml").write_text('[[games]]\nslug="palabra"\nsrht_repo="palabra"\nartifact_prefix="palabra"\n')
-            env = {"TRIGGER_PROJECT": "palabra", "TRIGGER_TAG": "v1.0.0", "TRIGGER_SHA": "expected"}
-            refs = (["v1.0.0"], "v1.0.0", "main", {"v1.0.0": "tag"}, {"v1.0.0": "wrong"})
+            env = {"TRIGGER_PROJECT": "palabra", "TRIGGER_TAG": "v1.0.0", "TRIGGER_SHA": "e" * 40}
+            refs = (["v1.0.0"], "v1.0.0", "main", {"v1.0.0": "tag"}, {"v1.0.0": "f" * 40})
             with mock.patch.dict(os.environ, env, clear=False), mock.patch.object(refresh_pages, "ls_refs", return_value=refs), self.assertRaises(SystemExit):
                 refresh_pages.wait_for_trigger(root)
 
@@ -306,6 +359,53 @@ class RefreshTests(unittest.TestCase):
             root = pathlib.Path(tmp)
             with mock.patch.dict(os.environ, {"TRIGGER_PROJECT": "palabra", "TRIGGER_TAG": "v1.0.0"}, clear=True), self.assertRaises(SystemExit):
                 refresh_pages.wait_for_trigger(root)
+
+    def test_github_trigger_rejects_incomplete_published_release(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            (root / "site-data").mkdir()
+            (root / "site-data/games.toml").write_text("games=[]\n")
+            (root / "fleet-site.toml").write_text(
+                '[[repos]]\nname="gander"\npages_subdir="gander"\nsrht_repo="gander"\n'
+                'artifact_prefix="gander"\nprovider="github"\ngithub_repo="averagechris/gander"\nexpected_platforms=["aarch64-darwin","x86_64-linux"]\n'
+            )
+            commit = "c" * 40
+            release = (["v1.0.0"], "v1.0.0", "main", {"v1.0.0": "tag"}, {"v1.0.0": commit}, {
+                "v1.0.0": {"gander-v1.0.0-x86_64-linux.tar.gz": {"browser_download_url": "https://github.test/archive"}}
+            })
+            env = {"TRIGGER_PROJECT": "gander", "TRIGGER_TAG": "v1.0.0", "TRIGGER_SHA": commit}
+            with mock.patch.dict(os.environ, env, clear=False), \
+                 mock.patch.object(refresh_pages, "github_release", return_value=release), \
+                 mock.patch.object(refresh_pages, "ls_refs") as ls_refs, \
+                 mock.patch.object(refresh_pages, "checksum") as checksum, \
+                 mock.patch.object(refresh_pages.time, "monotonic", side_effect=[0, 301]), \
+                 mock.patch.object(refresh_pages.time, "sleep"), \
+                 self.assertRaisesRegex(SystemExit, "timed out"):
+                refresh_pages.wait_for_trigger(root)
+            ls_refs.assert_not_called()
+            checksum.assert_not_called()
+
+    def test_github_trigger_uses_configured_release_platforms(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            (root / "site-data").mkdir()
+            (root / "site-data/games.toml").write_text("games=[]\n")
+            (root / "fleet-site.toml").write_text(
+                '[[repos]]\nname="gander"\npages_subdir="gander"\nartifact_prefix="gander"\n'
+                'provider="github"\ngithub_repo="averagechris/gander"\n'
+                'expected_platforms=["aarch64-darwin","x86_64-linux"]\n'
+            )
+            commit = "c" * 40
+            assets = {name: {"browser_download_url": f"https://github.test/{name}"} for platform in ("aarch64-darwin", "x86_64-linux") for name in (f"gander-v0.8.2-{platform}.tar.gz", f"gander-v0.8.2-{platform}.tar.gz.sha256")}
+            release = (["v0.8.2"], "v0.8.2", "main", {"v0.8.2": "tag"}, {"v0.8.2": commit}, {"v0.8.2": assets})
+            env = {"TRIGGER_PROJECT": "gander", "TRIGGER_TAG": "v0.8.2", "TRIGGER_SHA": commit}
+            with mock.patch.dict(os.environ, env, clear=False), mock.patch.object(refresh_pages, "github_release", return_value=release), mock.patch.object(refresh_pages, "checksum", return_value="a" * 64) as checksum:
+                refresh_pages.wait_for_trigger(root)
+            self.assertEqual(checksum.call_count, 2)
+
+    def test_github_platform_contract_fails_closed(self) -> None:
+        with self.assertRaisesRegex(SystemExit, "requires expected_platforms"):
+            refresh_pages.expected_platforms({"name": "gander", "provider": "github"})
 
 
 class RendererTests(unittest.TestCase):

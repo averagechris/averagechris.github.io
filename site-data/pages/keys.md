@@ -22,22 +22,22 @@ https://meta.sr.ht/~averagechris.keys
 Project release downloads live under each project subdirectory, usually like this:
 
 ```text
-https://averagechris.srht.site/<project>/downloads/<artifact-name>
+https://averagechris.github.io/<project>/downloads/<artifact-name>
 ```
 
 Every project downloads page publishes a `manifest.json` with per-artifact sha256 values, and `.sha256` files sit alongside the tarballs. For example:
 
 ```sh
-curl -fsSLO https://averagechris.srht.site/gander/downloads/gander-v0.3.0-aarch64-darwin.tar.gz
-curl -fsSLO https://averagechris.srht.site/gander/downloads/gander-v0.3.0-aarch64-darwin.tar.gz.sha256
+curl -fsSLO https://averagechris.github.io/gander/downloads/gander-v0.3.0-aarch64-darwin.tar.gz
+curl -fsSLO https://averagechris.github.io/gander/downloads/gander-v0.3.0-aarch64-darwin.tar.gz.sha256
 shasum -a 256 -c gander-v0.3.0-aarch64-darwin.tar.gz.sha256
 ```
 
 Or, if you want to compare against the JSON manifest instead of the sidecar file:
 
 ```sh
-curl -fsSLO https://averagechris.srht.site/gander/downloads/gander-v0.3.0-aarch64-darwin.tar.gz
-curl -fsSL https://averagechris.srht.site/gander/manifest.json | grep -A1 aarch64-darwin
+curl -fsSLO https://averagechris.github.io/gander/downloads/gander-v0.3.0-aarch64-darwin.tar.gz
+curl -fsSL https://averagechris.github.io/gander/manifest.json | grep -A1 aarch64-darwin
 shasum -a 256 gander-v0.3.0-aarch64-darwin.tar.gz
 ```
 

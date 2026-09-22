@@ -23,7 +23,7 @@ from urllib.parse import urljoin, urlparse, urlunparse
 
 
 VOLATILE_FILE_NAMES = {"state.json"}
-SAME_ORIGIN_HOSTS = {"averagechris.srht.site"}
+SAME_ORIGIN_HOSTS = {"averagechris.github.io", "averagechris.srht.site"}
 VOLATILE_TEXT_PATTERNS = [
     re.compile(r"\b\d{4}-\d{2}-\d{2}[T ][0-9:.+-]+Z?\b"),
     re.compile(r"\b(?:build|built|generated|updated)(?: at| on|:)?\s+[^<\n]{0,80}\d{4}-\d{2}-\d{2}[^<\n]*", re.I),

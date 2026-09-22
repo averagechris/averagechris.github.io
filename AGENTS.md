@@ -1,7 +1,7 @@
 # Website agent guide
 
 This repository is the single Pages publisher for
-<https://averagechris.srht.site/>. It owns project presentation, remote artifact
+<https://averagechris.github.io/>. It owns project presentation, remote artifact
 acquisition, caches/state, Zola rendering, refresh logic, and publication.
 
 Fleet release policy, the full operational registry, audits, templates, and
@@ -11,10 +11,11 @@ site acquisition. Do not add local checkout paths, quirks, tracker policy, or
 other operational fields. The flake temporarily forwards the pinned fleet
 input's `lib` output for compatibility.
 
-Release artifacts and refresh triggers still use SourceHut. Do not migrate that
-backend incidentally, submit builds, trigger releases, or publish Pages unless
-explicitly requested. Any SourceHut request must keep the existing user-agent,
-retry, OAuth `--secrets`, and `sourcehut_auth.sh` behavior.
+GitHub Actions and GitHub Pages are the primary refresh and publication path.
+The SourceHut publisher remains manually callable for rollback only. Do not
+submit builds, trigger releases, activate Pages, or publish unless explicitly
+requested. Any rollback must keep the existing user-agent, retry, OAuth
+`--secrets`, and `sourcehut_auth.sh` behavior.
 
 Use jj for version control. Validate site data with
 `PYTHONPATH=scripts python3 -m averagechris_site.data --check` and run the Python

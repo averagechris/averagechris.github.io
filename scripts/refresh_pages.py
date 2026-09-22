@@ -3,7 +3,7 @@
 
 from __future__ import annotations
 
-import argparse, concurrent.futures, copy, json, os, pathlib, re, shutil, subprocess, sys, tempfile, time, tomllib
+import argparse, concurrent.futures, copy, json, os, pathlib, re, shutil, subprocess, sys, tempfile, time, tomllib, urllib.parse
 
 import site_measure
 
@@ -44,7 +44,28 @@ def ls_refs(repo: str) -> tuple[list[str], str, str, dict[str, str], dict[str, s
 PLATFORMS = ("aarch64-darwin", "x86_64-darwin", "aarch64-linux", "x86_64-linux")
 USER_AGENT = "averagechris-fleet-pages (+https://averagechris.srht.site)"
 
-def publisher_revision(root: pathlib.Path) -> str:
+def github_release(repo: str) -> tuple[list[str], str, str, dict[str, str], dict[str, str], dict[str, dict]]:
+    """Resolve public, published GitHub releases and their assets.
+
+    Release publication is the atomic readiness signal: producers must publish
+    only after every configured artifact and checksum has been uploaded.
+    """
+    releases = github_api(repo, "releases?per_page=100")
+    assert isinstance(releases, list)
+    published = [r for r in releases if not r.get("draft") and SEMVER.match(str(r.get("tag_name", "")))]
+    published.sort(key=lambda r: tuple(map(int, r["tag_name"][1:].split("."))), reverse=True)
+    refs = github_api(repo, "git/matching-refs/tags/v")
+    published_names = {r["tag_name"] for r in published}
+    annotated = [r for r in refs if r["ref"].removeprefix("refs/tags/") in published_names and r["object"].get("type") == "tag"]
+    tag_shas = {r["ref"].removeprefix("refs/tags/"): r["object"]["sha"] for r in annotated}
+    tag_commits = {tag: github_api(repo, f"git/tags/{sha}")["object"]["sha"] for tag, sha in tag_shas.items()}
+    published = [r for r in published if r["tag_name"] in tag_shas]
+    main = github_api(repo, "commits/main")
+    assets = {r["tag_name"]: {a["name"]: a for a in r.get("assets", [])} for r in published}
+    tags = [r["tag_name"] for r in published]
+    return tags, tags[0] if tags else "", main["sha"], tag_shas, tag_commits, assets
+
+def publisher_revision(root: pathlib.Path, *, provider: str = "sourcehut") -> str:
     try:
         local = subprocess.check_output(
             ["git", "rev-parse", "HEAD"], cwd=root, text=True, stderr=subprocess.DEVNULL
@@ -58,10 +79,25 @@ def publisher_revision(root: pathlib.Path) -> str:
             cwd=root,
             text=True,
         ).strip()
-    remote = ls_refs("averagechris.srht.site")[2]
+    if provider == "github":
+        remote = github_main("averagechris/averagechris.github.io")
+    else:
+        remote = ls_refs("averagechris.srht.site")[2]
     if not remote or local != remote:
         raise SystemExit(f"publisher checkout {local} is not current main {remote or '<missing>'}")
     return local
+
+def github_main(repo: str) -> str:
+    return str(github_api(repo, "commits/main")["sha"])
+
+def github_api(repo: str, path: str) -> object:
+    url = f"https://api.github.com/repos/{repo}/{path}"
+    command = ["curl", "-fsSL", "--retry", "2", "--user-agent", USER_AGENT,
+               "-H", "Accept: application/vnd.github+json"]
+    if token := os.environ.get("GITHUB_TOKEN"):
+        command.extend(["-H", f"Authorization: Bearer {token}"])
+    raw = subprocess.check_output([*command, url], text=True, timeout=120)
+    return json.loads(raw)
 
 def probe(url: str) -> bool:
     # Tri-state: only 200/404 are stable fingerprint inputs. Tarpits, 5xx,
@@ -109,7 +145,8 @@ def checksum(url: str, name: str) -> str | None:
                 return fields[0].lower()
     raise SystemExit(f"unstable checksum fetch for {url}: {', '.join(observed)}")
 
-def fingerprint(root: pathlib.Path, *, publisher_sha_override: str | None = None) -> tuple[dict[str, dict], dict[str, dict]]:
+def fingerprint(root: pathlib.Path, *, publisher_sha_override: str | None = None,
+                publisher_provider: str = "sourcehut") -> tuple[dict[str, dict], dict[str, dict]]:
     """Latest tag + main sha + which platform artifacts exist on the latest tag.
     Artifacts are part of the fingerprint so a late-arriving Linux build still
     triggers a republish of an already-published tag."""
@@ -125,21 +162,32 @@ def fingerprint(root: pathlib.Path, *, publisher_sha_override: str | None = None
     ]
     games = [{**g, "kind": "web_game", "key": f"games/{g['slug']}"} for g in tomllib.loads((root / "site-data" / "games.toml").read_text()).get("games", [])]
     entries = repos + games
-    publisher_sha = publisher_sha_override or publisher_revision(root)
+    publisher_sha = publisher_sha_override or publisher_revision(root, provider=publisher_provider)
     out: dict[str, dict] = {"_publisher": {"main_sha": publisher_sha}}
     refs: dict[str, dict] = {}
     def one(r: dict) -> tuple[str, dict, str, dict]:
-        repo = r.get("srht_repo", r.get("name", r.get("slug")))
-        _, tag, main, tags, _ = ls_refs(repo)
+        repo = r.get("github_repo") if r.get("provider") == "github" else r.get("srht_repo", r.get("name", r.get("slug")))
+        gh_assets = {}
+        if r.get("provider") == "github":
+            _, tag, main, tags, _, gh_assets = github_release(repo)
+        else:
+            _, tag, main, tags, _ = ls_refs(repo)
         artifacts = []
         if tag:
             prefix = r.get("artifact_prefix", r.get("name", r.get("slug")))
-            suffixes = ["web"] if r["kind"] == "web_game" else list(PLATFORMS)
+            suffixes = ["web"] if r["kind"] == "web_game" else expected_platforms(r)
             for suffix in suffixes:
                 name = f"{prefix}-{tag}-{suffix}.tar.gz"
-                url = f"https://git.sr.ht/~averagechris/{repo}/refs/download/{tag}/{name}"
-                if probe(url):
-                    digest = checksum(url + ".sha256", name)
+                if r.get("provider") == "github":
+                    listed = gh_assets.get(tag, {})
+                    asset = listed.get(name); sum_asset = listed.get(name + ".sha256")
+                    url = asset["browser_download_url"] if asset else ""
+                    digest = checksum(sum_asset["browser_download_url"], name) if asset and sum_asset else None
+                    present = bool(asset and sum_asset)
+                else:
+                    url = f"https://git.sr.ht/~averagechris/{repo}/refs/download/{tag}/{name}"
+                    present = probe(url); digest = checksum(url + ".sha256", name) if present else None
+                if present:
                     if digest is not None:
                         artifacts.append({"name": name, "sha256": digest})
         return r["key"], {"tag": tag, "tag_sha": tags.get(tag, ""), "main_sha": main, "artifacts": sorted(artifacts, key=lambda a: a["name"])}, repo, {"tags": tags, "main_sha": main}
@@ -209,33 +257,72 @@ def classify_comparison(current: dict[str, dict], live: dict[str, dict]) -> str:
 
 def wait_for_trigger(root: pathlib.Path) -> None:
     project, tag, expected_sha = os.environ.get("TRIGGER_PROJECT"), os.environ.get("TRIGGER_TAG"), os.environ.get("TRIGGER_SHA")
-    if not project or not tag: return
-    if not expected_sha: raise SystemExit("TRIGGER_SHA is required with TRIGGER_PROJECT/TRIGGER_TAG")
+    supplied = (bool(project), bool(tag), bool(expected_sha))
+    if not any(supplied):
+        return
+    if not all(supplied):
+        raise SystemExit("TRIGGER_PROJECT, TRIGGER_TAG, and TRIGGER_SHA must be supplied together")
+    if not SEMVER.fullmatch(tag):
+        raise SystemExit(f"TRIGGER_TAG must be a semver tag, got {tag!r}")
+    if not re.fullmatch(r"[0-9a-f]{40}", expected_sha):
+        raise SystemExit("TRIGGER_SHA must be a full lowercase commit SHA")
     repos = [{**r, "kind": "native"} for r in tomllib.loads((root / "fleet-site.toml").read_text())["repos"]]
     games = [{**g, "kind": "web_game", "pages_subdir": f"games/{g['slug']}", "name": g["slug"]} for g in tomllib.loads((root / "site-data" / "games.toml").read_text()).get("games", [])]
-    entry = next((r for r in repos + games if project in (r["pages_subdir"], r["name"], r.get("srht_repo"))), None)
-    repo = (entry.get("srht_repo") or entry["name"]) if entry else project
+    entry = next((r for r in repos + games if project in (r["pages_subdir"], r["name"], r.get("srht_repo"), r.get("github_repo"))), None)
+    if entry is None:
+        raise SystemExit(f"TRIGGER_PROJECT is not in the site registry: {project}")
+    provider = entry.get("provider", "sourcehut") if entry else "sourcehut"
+    repo = entry.get("github_repo") if provider == "github" else entry.get("srht_repo") or entry["name"]
     deadline, delay = time.monotonic() + 300, 5
     while time.monotonic() < deadline:
-        refs = ls_refs(repo)
+        gh_assets = {}
+        if provider == "github":
+            refs = github_release(repo)
+            gh_assets = refs[5].get(tag, {})
+        else:
+            refs = ls_refs(repo)
         if tag in refs[0]:
             observed_sha = refs[4].get(tag, "")
             if observed_sha != expected_sha:
                 raise SystemExit(f"trigger tag {project}/{tag} resolves to {observed_sha}, expected {expected_sha}")
             prefix = entry.get("artifact_prefix", entry["name"]) if entry else project
-            suffixes = ["web"] if entry and entry["kind"] == "web_game" else list(PLATFORMS)
-            base = f"https://git.sr.ht/~averagechris/{repo}/refs/download/{tag}/"
+            suffixes = ["web"] if entry and entry["kind"] == "web_game" else expected_platforms(entry)
             ready = []
             for suffix in suffixes:
                 name = f"{prefix}-{tag}-{suffix}.tar.gz"
-                if probe(base + name) and checksum(base + name + ".sha256", name) is not None:
+                if provider == "github":
+                    artifact = gh_assets.get(name)
+                    sidecar = gh_assets.get(name + ".sha256")
+                    complete = bool(artifact and sidecar and checksum(sidecar["browser_download_url"], name) is not None)
+                else:
+                    base = f"https://git.sr.ht/~averagechris/{repo}/refs/download/{tag}/"
+                    complete = probe(base + name) and checksum(base + name + ".sha256", name) is not None
+                if complete:
                     ready.append(name)
-            if ready:
+            if len(ready) == len(suffixes):
                 print(f"trigger tag and artifact are visible: {project}/{tag} ({', '.join(ready)})")
                 return
         print(f"waiting for {project}/{tag} and release artifact to appear...")
         time.sleep(delay); delay = min(delay * 2, 60)
     raise SystemExit(f"timed out waiting for {project}/{tag}")
+
+def expected_platforms(entry: dict) -> list[str]:
+    """Release platforms configured by the site projection.
+
+    SourceHut rows retain the historical four-platform discovery default. A
+    GitHub release is an atomic readiness contract, so migrated rows must state
+    that contract explicitly rather than silently accepting the global default.
+    """
+    configured = entry.get("expected_platforms")
+    if configured is None:
+        if entry.get("provider", "sourcehut") == "sourcehut":
+            return list(PLATFORMS)
+        raise SystemExit(f"{entry.get('name', '<unnamed>')}: github provider requires expected_platforms")
+    if (not isinstance(configured, list) or not configured or
+            any(not isinstance(value, str) or value not in PLATFORMS for value in configured) or
+            len(set(configured)) != len(configured)):
+        raise SystemExit(f"{entry.get('name', '<unnamed>')}: invalid expected_platforms")
+    return configured
 
 def main(argv: list[str] | None = None) -> None:
     ap = argparse.ArgumentParser()
@@ -254,11 +341,17 @@ def main(argv: list[str] | None = None) -> None:
     if args.benchmark_live_state and not re.fullmatch(r"[0-9a-f]{40}", benchmark_publisher_sha):
         ap.error("controlled benchmarks require a full BENCH_EXPECTED_REVISION")
     root = pathlib.Path(__file__).resolve().parent.parent
+    publisher_provider = "github" if args.domain == "averagechris.github.io" else "sourcehut"
+    def output(changed: bool) -> None:
+        if path := os.environ.get("GITHUB_OUTPUT"):
+            with open(path, "a") as handle:
+                handle.write(f"changed={'true' if changed else 'false'}\n")
     wait_for_trigger(root)
     with site_measure.stage("before_fingerprint"):
         current, refs = fingerprint(
             root,
             publisher_sha_override=benchmark_publisher_sha or None,
+            publisher_provider=publisher_provider,
         )
     with site_measure.stage("live_state_comparison"):
         live = benchmark_live_fingerprint(current, args.benchmark_live_state) if args.benchmark_live_state else live_fingerprint(args.domain)
@@ -266,6 +359,7 @@ def main(argv: list[str] | None = None) -> None:
     print(f"fingerprint comparison: {comparison}")
     if not args.force and comparison == "unchanged":
         print("fingerprint unchanged; no publish needed")
+        output(False)
         return
     before, before_refs = current, refs
     for attempt in range(1, 4):
@@ -280,16 +374,19 @@ def main(argv: list[str] | None = None) -> None:
             after, after_refs = fingerprint(
                 root,
                 publisher_sha_override=benchmark_publisher_sha or None,
+                publisher_provider=publisher_provider,
             )
         if before == after:
             if args.no_publish:
                 print("would publish dist/pages.tar.gz")
+                output(True)
                 return
             # Prefer the app-provided binary to skip a second in-job flake eval/build.
             if shutil.which("publish-pages"):
                 run(["publish-pages", "--domain", args.domain], cwd=root)
             else:
                 run(["nix", "run", ".#publish-pages", "--", "--domain", args.domain], cwd=root)
+            output(True)
             return
         print(f"fingerprint moved during build (attempt {attempt}); rebuilding")
         before, before_refs = after, after_refs

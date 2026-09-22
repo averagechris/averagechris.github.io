@@ -1,4 +1,4 @@
-base_url = "https://averagechris.srht.site"
+base_url = "https://averagechris.github.io"
 compile_sass = false
 build_search_index = false
 generate_feeds = false

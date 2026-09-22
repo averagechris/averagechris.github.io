@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build the averagechris.srht.site root Pages tarball.
+"""Build the averagechris.github.io root Pages artifact.
 
 Single-publisher model: acquires every fleet project's downloads subdirectory
 from durable sources (annotated git tags, tag artifacts, and docs pages fetched

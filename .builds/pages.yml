@@ -17,8 +17,3 @@ tasks:
   - publish-race-safe: |
       cd averagechris.srht.site
       nix run .#refresh-pages -- --force
-submitter:
-  git.sr.ht:
-    enabled: true
-    allow-refs:
-      - refs/heads/main

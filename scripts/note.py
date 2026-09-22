@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Manage local notes for averagechris.srht.site."""
+"""Manage local notes for averagechris.github.io."""
 
 from __future__ import annotations
 

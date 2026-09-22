@@ -1,0 +1,52 @@
+name: Pages
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: '17 * * * *'
+  workflow_dispatch:
+    inputs:
+      project: {description: Project, required: false, type: string}
+      tag: {description: Release tag, required: false, type: string}
+      sha: {description: Peeled tag commit SHA, required: false, type: string}
+permissions:
+  contents: read
+concurrency:
+  group: pages
+  cancel-in-progress: false
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    outputs:
+      changed: ${{ steps.refresh.outputs.changed }}
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+      - uses: DeterminateSystems/nix-installer-action@786fff0690178f1234e4e1fe9b536e94f5433196 # v20
+      - name: Build candidate
+        id: refresh
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TRIGGER_PROJECT: ${{ inputs.project }}
+          TRIGGER_TAG: ${{ inputs.tag }}
+          TRIGGER_SHA: ${{ inputs.sha }}
+        run: nix run .#refresh-pages -- --no-publish --domain averagechris.github.io ${{ github.event_name == 'push' && '--force' || '' }}
+      - if: steps.refresh.outputs.changed == 'true'
+        run: touch dist/site/.nojekyll
+      - uses: actions/upload-pages-artifact@7b1f4a764d45c48632c6b24a0339c27f5614fb0b # v4.0.0
+        if: steps.refresh.outputs.changed == 'true'
+        with:
+          path: dist/site
+  deploy:
+    needs: build
+    if: needs.build.outputs.changed == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy
+        id: deployment
+        uses: actions/deploy-pages@d6db90192c3baa9bc2927b7b3a4f5250c2c9a9b3 # v4.0.5

@@ -1,4 +1,4 @@
-# Project registry for https://averagechris.srht.site/.
+# Project registry for https://averagechris.github.io/.
 # Release mechanics live in averagechris/fleet; acquisition aliases are in fleet-site.toml.
 
 [[projects]]
@@ -41,7 +41,7 @@ extra_links = []
 path = "gander"
 name = "gander"
 description = "Take a gander at your jj changes: a fast review TUI with durable viewed-state, comments, and exportable review artifacts."
-repo = "https://git.sr.ht/~averagechris/gander"
+repo = "https://github.com/averagechris/gander"
 downloads = true
 tier = "featured"
 extra_links = []

@@ -1,4 +1,4 @@
-# averagechris.srht.site
+# averagechris.github.io
 
 Fleet release tooling and the operational registry now live in
 [`averagechris/fleet`](https://github.com/averagechris/fleet). This flake pins
@@ -7,14 +7,15 @@ of `lib.fleet.core`, `lib.fleet.presets.rust`, and `lib.mkFleetApps` keep workin
 The website retains only `fleet-site.toml`, the acquisition fields needed to
 render project pages.
 
-The root homepage for <https://averagechris.srht.site/>: an about-me plus a
+The root homepage for <https://averagechris.github.io/>: an about-me plus a
 directory of my projects, each linking to its downloads page at
-`https://averagechris.srht.site/<project>/`.
+`https://averagechris.github.io/<project>/`.
 
 ## Architecture
 
 This repo is the single publisher for the whole site. Fleet project releases
-provide durable sourcehut tags, tag artifacts, and repo files. `build-pages`
+provide durable release tags, assets, and repo files through the provider in
+the fleet registry. `build-pages`
 renders the root homepage plus project pages from those sources, and
 `refresh-pages` publishes the result. Refreshes are triggered by project release
 jobs and by an hourly check. Zola (`renderers/zola/`) is the sole renderer,
@@ -39,7 +40,7 @@ nix run .#build-pages
 
 nix run .#serve            # pages-alike local server (live Pages CSP/MIME/404) on http://localhost:8000
 
-# publish to https://averagechris.srht.site/
+# manually publish the legacy SourceHut rollback site (not the primary path)
 nix run .#publish-pages
 ```
 
@@ -86,10 +87,10 @@ tag-triggered release job—the app performs the same build/upload/refresh order
 
 Project bootstrap and tracker audits are provided by `averagechris/fleet`.
 
-Pushing to this repo also republishes the site via `.builds/pages.yml`.
-`.builds/refresh-pages.yml` can be submitted by an external scheduler to run
-`nix run .#refresh-pages`, which fingerprints fleet tags/main SHAs and publishes
-only when the durable sources changed.
+Pushes to `main`, an hourly schedule, and manual dispatch run the primary
+`.github/workflows/pages.yml` candidate build and GitHub Pages deploy. The old
+`.builds/pages.yml` and `builds/refresh-pages.yml` SourceHut publisher remains
+manually callable for rollback; it is no longer the primary publication path.
 
 ## Files
 

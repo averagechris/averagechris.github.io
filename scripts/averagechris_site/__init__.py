@@ -1,1 +1,1 @@
-"""averagechris.srht.site build and validation helpers."""
+"""averagechris.github.io build and validation helpers."""

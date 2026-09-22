@@ -15,6 +15,9 @@ pages_subdir = "gander"
 srht_repo = "gander"
 artifact_prefix = "gander"
 binaries = ["gander"]
+provider = "github"
+github_repo = "averagechris/gander"
+expected_platforms = ["aarch64-darwin", "x86_64-linux"]
 
 [[repos]]
 name = "granola-cli"

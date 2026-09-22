@@ -7,7 +7,7 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 
 
 class PublisherManifestTests(unittest.TestCase):
-    def test_only_pages_manifest_automatically_publishes_main(self) -> None:
+    def test_sourcehut_has_no_automatic_main_publisher(self) -> None:
         automatic = []
         for manifest in (ROOT / ".builds").glob("*.yml"):
             text = manifest.read_text()
@@ -16,7 +16,7 @@ class PublisherManifestTests(unittest.TestCase):
             ):
                 automatic.append(manifest.name)
 
-        self.assertEqual(automatic, ["pages.yml"])
+        self.assertEqual(automatic, [])
 
         pages = (ROOT / ".builds" / "pages.yml").read_text()
         refresh = (ROOT / "builds/refresh-pages.yml").read_text()

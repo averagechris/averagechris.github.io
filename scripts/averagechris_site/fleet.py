@@ -98,18 +98,35 @@ def semver_key(tag: str) -> tuple[int, int, int]:
 def load_fleet(repo: pathlib.Path) -> dict[str, dict]:
     path = repo / "fleet-site.toml"
     data = tomllib.loads(path.read_text())
-    allowed = {"name", "pages_subdir", "srht_repo", "artifact_prefix", "binaries"}
-    required = {"name", "pages_subdir", "srht_repo", "artifact_prefix"}
+    allowed = {"name", "pages_subdir", "srht_repo", "artifact_prefix", "binaries", "provider", "github_repo", "expected_platforms"}
     result: dict[str, dict] = {}
     for row in data.get("repos", []):
+        provider = row.get("provider", "sourcehut")
+        required = {"name", "pages_subdir", "artifact_prefix"}
+        required.add("github_repo" if provider == "github" else "srht_repo")
         missing = required - row.keys()
         extra = row.keys() - allowed
+        if provider not in ("sourcehut", "github"):
+            fail(f"{path}: invalid provider for {row.get('name', '<unnamed>')}")
+        if provider == "github" and not row.get("github_repo"):
+            fail(f"{path}: github provider requires github_repo for {row.get('name', '<unnamed>')}")
+        platforms = row.get("expected_platforms")
+        if provider == "github" and platforms is None:
+            fail(f"{path}: github provider requires expected_platforms for {row.get('name', '<unnamed>')}")
+        if platforms is not None and (not isinstance(platforms, list) or not platforms or
+                                      any(not isinstance(value, str) or value not in PLATFORMS for value in platforms) or
+                                      len(set(platforms)) != len(platforms)):
+            fail(f"{path}: invalid expected_platforms for {row.get('name', '<unnamed>')}")
         if missing or extra:
             fail(f"{path}: invalid site registry row {row.get('name', '<unnamed>')}: missing={sorted(missing)}, extra={sorted(extra)}")
         if row["pages_subdir"] in result:
             fail(f"{path}: duplicate pages_subdir {row['pages_subdir']}")
         result[row["pages_subdir"]] = row
     return result
+
+
+def expected_platforms(row: dict) -> list[str]:
+    return list(row.get("expected_platforms", PLATFORMS))
 
 
 def load_release_artifacts(repo: pathlib.Path) -> tuple[dict[str, str], dict[str, bool]]:
@@ -137,15 +154,15 @@ def update_release_artifacts(repo: pathlib.Path, sha256: dict[str, str], absent:
         print("updated release-artifacts.toml with learned artifact shas; commit it with this change")
 
 
-def ls_remote(srht_repo: str) -> tuple[dict[str, str], str]:
+def ls_remote(repo_name: str, *, provider: str = "sourcehut") -> tuple[dict[str, str], str]:
     refs_json = os.environ.get("FLEET_REFS_JSON")
     if refs_json:
         try:
-            entry = json.loads(pathlib.Path(refs_json).read_text()).get(srht_repo)
+            entry = json.loads(pathlib.Path(refs_json).read_text()).get(repo_name)
         except (OSError, json.JSONDecodeError, AttributeError) as error:
             fail(f"invalid FLEET_REFS_JSON {refs_json}: {error}")
         if not isinstance(entry, dict) or not isinstance(entry.get("tags"), dict) or not isinstance(entry.get("main_sha"), str):
-            fail(f"FLEET_REFS_JSON has no valid pinned refs for {srht_repo}")
+            fail(f"FLEET_REFS_JSON has no valid pinned refs for {repo_name}")
         # refresh_pages hands off the refs from the build attempt's stable
         # before fingerprint so this render skips duplicate ls-remote calls.
         return dict(entry["tags"]), entry["main_sha"]
@@ -153,8 +170,9 @@ def ls_remote(srht_repo: str) -> tuple[dict[str, str], str]:
     # datacenter IPs just like python-urllib (observed as a silent 120s hang
     # in CI); send the same UA curl uses, and retry once since the tarpit
     # is intermittent.
-    command = ["git", "-c", f"http.userAgent={USER_AGENT}", "ls-remote",
-               f"https://git.sr.ht/~averagechris/{srht_repo}"]
+    remote = (f"https://github.com/{repo_name}.git" if provider == "github"
+              else f"https://git.sr.ht/~averagechris/{repo_name}")
+    command = ["git", "-c", f"http.userAgent={USER_AGENT}", "ls-remote", remote]
     try:
         out = run_text(command)
     except SystemExit:
@@ -218,6 +236,21 @@ def detect_wiki_collisions(pages: list[dict]) -> None:
 
 def srht_download(repo_name: str, tag: str, name: str) -> str:
     return f"https://git.sr.ht/~averagechris/{repo_name}/refs/download/{tag}/{urllib.parse.quote(name)}"
+
+def remote_raw(f: dict, ref: str, path: str) -> str:
+    if f.get("provider") == "github":
+        return f"https://raw.githubusercontent.com/{f['github_repo']}/{urllib.parse.quote(ref, safe='')}/{urllib.parse.quote(path, safe='/')}"
+    return srht_raw(f["srht_repo"], ref, path)
+
+
+def remote_repo(f: dict) -> str:
+    return f["github_repo"] if f.get("provider") == "github" else f["srht_repo"]
+
+
+def remote_download(f: dict, tag: str, name: str) -> str:
+    if f.get("provider") == "github":
+        return f"https://github.com/{f['github_repo']}/releases/download/{urllib.parse.quote(tag)}/{urllib.parse.quote(name)}"
+    return srht_download(f["srht_repo"], tag, name)
 
 
 def parse_changelog(text: str) -> dict[str, str]:
@@ -410,7 +443,8 @@ def acquire_fleet_data(repo: pathlib.Path, config: dict, site_dir: pathlib.Path,
             return {"path": p["path"], "published": None, "sha256": {}, "absent": {}}
         f = {**fleet[p["path"]], "description": p.get("description", "")}
         print(f"  {p['path']}: resolving tags", flush=True)
-        tags, main_sha = ls_remote(f["srht_repo"])
+        remote_name = remote_repo(f)
+        tags, main_sha = ls_remote(remote_name, provider=f.get("provider", "sourcehut"))
         versions = sorted(tags, key=semver_key, reverse=True)
         if not versions:
             return {"path": p["path"], "published": False, "sha256": {}, "absent": {}}
@@ -418,9 +452,9 @@ def acquire_fleet_data(repo: pathlib.Path, config: dict, site_dir: pathlib.Path,
         project_dir = site_dir / p["path"]; project_dir.mkdir(parents=True, exist_ok=True)
         docs = set()
         with concurrent.futures.ThreadPoolExecutor(max_workers=3) as inner:
-            doc_futures = {inner.submit(fetch, srht_raw(f["srht_repo"], main_sha, f"docs/pages/{doc}"), soft=True): doc for doc in DOC_PAGES}
-            changelog_future = inner.submit(fetch, srht_raw(f["srht_repo"], tag, "CHANGELOG.md"), soft=True)
-            wiki_manifest_future = inner.submit(fetch, srht_raw(f["srht_repo"], main_sha, "docs/wiki/index.toml"), soft=True)
+            doc_futures = {inner.submit(fetch, remote_raw(f, main_sha, f"docs/pages/{doc}"), soft=True): doc for doc in DOC_PAGES}
+            changelog_future = inner.submit(fetch, remote_raw(f, tag, "CHANGELOG.md"), soft=True)
+            wiki_manifest_future = inner.submit(fetch, remote_raw(f, main_sha, "docs/wiki/index.toml"), soft=True)
             doc_results = {doc: future.result() for future, doc in doc_futures.items()}
             changelog_text = (changelog_future.result() or b"").decode("utf-8", "replace")
             wiki_manifest_data = wiki_manifest_future.result()
@@ -428,26 +462,26 @@ def acquire_fleet_data(repo: pathlib.Path, config: dict, site_dir: pathlib.Path,
             if wiki_manifest_data is None:
                 print(f"  {p['path']}: no docs/wiki/index.toml; skipping wiki", flush=True)
             else:
-                for wiki in parse_wiki_manifest(wiki_manifest_data, repo_name=f["srht_repo"]):
-                    body_data = fetch(srht_raw(f["srht_repo"], main_sha, f"docs/wiki/{wiki['file']}"), soft=True)
+                for wiki in parse_wiki_manifest(wiki_manifest_data, repo_name=remote_repo(f)):
+                    body_data = fetch(remote_raw(f, main_sha, f"docs/wiki/{wiki['file']}"), soft=True)
                     if body_data is None:
                         print(f"  warn: {p['path']} docs/wiki/{wiki['file']} missing; skipping wiki page {wiki['slug']}", flush=True)
                         continue
                     if len(body_data) > MAX_DOC_BYTES:
-                        fail(f"{f['srht_repo']} docs/wiki/{wiki['file']} is larger than {MAX_DOC_BYTES} bytes")
+                        fail(f"{remote_repo(f)} docs/wiki/{wiki['file']} is larger than {MAX_DOC_BYTES} bytes")
                     wiki_pages.append({**wiki, "body": body_data.decode("utf-8", "replace"), "body_format": "markdown", "source": f["name"], "project": {"name": f["name"], "pages_subdir": f["pages_subdir"]}})
             for doc in DOC_PAGES:
                 data = doc_results[doc]
                 if data is not None:
                     if len(data) > MAX_DOC_BYTES:
-                        fail(f"{f['srht_repo']} docs/pages/{doc} is larger than {MAX_DOC_BYTES} bytes")
+                        fail(f"{remote_repo(f)} docs/pages/{doc} is larger than {MAX_DOC_BYTES} bytes")
                     (project_dir / doc).write_bytes(data); docs.add(doc)
 
             sha_prefetches = []
             for index, v in enumerate(versions):
-                for platform in PLATFORMS:
+                for platform in expected_platforms(f):
                     name = f"{f['artifact_prefix']}-{v}-{platform}.tar.gz"
-                    url = srht_download(f["srht_repo"], v, name); sha_url = url + ".sha256"
+                    url = remote_download(f, v, name); sha_url = url + ".sha256"
                     key = f"{p['path']}/{name}"
                     hosted = index < 3
                     if hosted or (key not in cached_sha256 and key not in cached_absent):
@@ -458,9 +492,9 @@ def acquire_fleet_data(repo: pathlib.Path, config: dict, site_dir: pathlib.Path,
         learned_sha256: dict[str, str] = {}
         learned_absent: dict[str, bool] = {}
         for index, v in enumerate(versions):
-            for platform in PLATFORMS:
+            for platform in expected_platforms(f):
                 name = f"{f['artifact_prefix']}-{v}-{platform}.tar.gz"
-                url = srht_download(f["srht_repo"], v, name); sha_url = url + ".sha256"
+                url = remote_download(f, v, name); sha_url = url + ".sha256"
                 key = f"{p['path']}/{name}"
                 hosted = index < 3
                 sha_data = None

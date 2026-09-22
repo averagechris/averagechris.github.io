@@ -1,5 +1,5 @@
 {
-  description = "Root homepage for averagechris.srht.site";
+  description = "Root homepage for averagechris.github.io";
 
   nixConfig = {
     extra-substituters = ["https://averagechris-dotfiles.cachix.org"];

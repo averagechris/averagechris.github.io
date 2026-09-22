@@ -4,7 +4,7 @@
 Usage:
     add_project.py <path> --description "..." [--name NAME] [--repo URL] [--unlisted]
 
-<path> is the subdirectory under https://averagechris.srht.site/ where the
+<path> is the subdirectory under https://averagechris.github.io/ where the
 project publishes its downloads page. Defaults: name = path, repo =
 https://git.sr.ht/~averagechris/<path>.
 """

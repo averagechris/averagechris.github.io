@@ -1,18 +1,19 @@
 # Architecture
 
-This repo is the single Pages publisher for `averagechris.srht.site`. Fleet
-projects publish durable inputs on sourcehut: semver tags, tag artifacts, and
-selected files from pinned revisions. `build-pages` resolves each fleet repo's
-latest semver tag and main SHA, downloads immutable tag artifacts, fetches
-`CHANGELOG.md` at the tag, fetches optional docs pages from pinned main, and
-records the exact inputs in `/state.json`.
+This repo is the single Pages publisher for `averagechris.github.io`. Fleet
+projects publish durable inputs through their configured provider: semver tags,
+release assets, and selected files from pinned revisions. `build-pages` resolves
+each fleet repo's latest semver tag and main SHA, downloads immutable release
+artifacts, fetches `CHANGELOG.md` at the tag, fetches optional docs pages from
+pinned main, and records the exact inputs in `/state.json`.
 
 Project release jobs submit an ephemeral refresh manifest equivalent to
 `.builds/refresh-pages.yml`, with `TRIGGER_*` env. An hourly thorny timer is the
 backstop. `refresh-pages` compares the latest tags and main SHAs to the live
 `/state.json`; unchanged fingerprints exit cheaply. When inputs changed, it
-rebuilds deterministically from sourcehut, fingerprints again before publishing,
-and retries a bounded number of times so concurrent releases converge.
+rebuilds deterministically from the configured providers, fingerprints again
+before publishing, and retries a bounded number of times so concurrent releases
+converge.
 
 Browser games follow the same single-publisher rule. `site-data/games.toml` is
 the canonical, checked registry; it currently registers Palabra. A game release
