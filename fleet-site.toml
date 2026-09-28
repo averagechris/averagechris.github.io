@@ -54,6 +54,10 @@ pages_subdir = "sideshow"
 srht_repo = "sideshow"
 artifact_prefix = "sideshow"
 binaries = ["sideshow"]
+provider = "github"
+github_repo = "averagechris/sideshow"
+expected_platforms = ["aarch64-darwin", "x86_64-linux"]
+sourcehut_through = "v0.5.2"
 
 [[repos]]
 name = "slack-rs"
