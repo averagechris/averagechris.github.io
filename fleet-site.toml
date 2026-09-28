@@ -18,6 +18,7 @@ binaries = ["gander"]
 provider = "github"
 github_repo = "averagechris/gander"
 expected_platforms = ["aarch64-darwin", "x86_64-linux"]
+sourcehut_through = "v0.8.1"
 
 [[repos]]
 name = "granola-cli"

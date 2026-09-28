@@ -38,6 +38,8 @@
 "gander/gander-v0.8.1-aarch64-darwin.tar.gz" = "e12b03fddbda0299575b41a9bc32d8c27235e6ba3b7ad13828a728428d488eb6"
 "gander/gander-v0.8.2-aarch64-darwin.tar.gz" = "2edc48d88de93ab57e3aa9e9d5886ae6077e793b910c2bd8ab60380e8fa0c3fa"
 "gander/gander-v0.8.2-x86_64-linux.tar.gz" = "3279072455356f2a9926a8e4d5875699fd3f4cd4d7ebd89a52514269142bf597"
+"gander/gander-v0.8.3-aarch64-darwin.tar.gz" = "0cd09806933ae74ecc4ed341723eb15cc13cb2a8b2669c3dbfa93e49d1dbf4fb"
+"gander/gander-v0.8.3-x86_64-linux.tar.gz" = "024ad8f0c63a1b4e4e396859eaf5157531594cd4b0ea24352a547bc0fdb7f55d"
 "granola-cli/granola-cli-v0.2.0-aarch64-darwin.tar.gz" = "d97e99ef346166d4599eda4af5c0c83f32280fde28151d093b79c7d3029716d8"
 "granola-cli/granola-cli-v0.2.1-aarch64-darwin.tar.gz" = "fb5540b68737161545a69dce0d05a76e82a921cce2eedaa80bf15cc03b1ae3f9"
 "granola-cli/granola-cli-v0.3.0-aarch64-darwin.tar.gz" = "27c41d96bd28f0c1d784fd4a8e1d6d634cda43bc1dd2c683105746ca3f1c1913"
@@ -145,6 +147,9 @@
 "gander/gander-v0.7.1-x86_64-darwin.tar.gz" = true
 "gander/gander-v0.7.2-aarch64-linux.tar.gz" = true
 "gander/gander-v0.7.2-x86_64-darwin.tar.gz" = true
+"gander/gander-v0.8.0-aarch64-linux.tar.gz" = true
+"gander/gander-v0.8.0-x86_64-darwin.tar.gz" = true
+"gander/gander-v0.8.0-x86_64-linux.tar.gz" = true
 "granola-cli/granola-cli-v0.2.0-aarch64-linux.tar.gz" = true
 "granola-cli/granola-cli-v0.2.0-x86_64-darwin.tar.gz" = true
 "granola-cli/granola-cli-v0.2.0-x86_64-linux.tar.gz" = true
