@@ -79,3 +79,7 @@ pages_subdir = "workctl"
 srht_repo = "workctl"
 artifact_prefix = "workctl"
 binaries = ["workctl", "workd"]
+provider = "github"
+github_repo = "averagechris/workctl"
+expected_platforms = ["aarch64-darwin", "x86_64-linux"]
+sourcehut_through = "v0.1.1"
