@@ -47,6 +47,10 @@ pages_subdir = "rdny"
 srht_repo = "rdny"
 artifact_prefix = "rdny"
 binaries = ["rdny"]
+provider = "github"
+github_repo = "averagechris/rdny"
+expected_platforms = ["aarch64-darwin", "x86_64-linux"]
+sourcehut_through = "v0.3.1"
 
 [[repos]]
 name = "sideshow"
@@ -72,6 +76,10 @@ pages_subdir = "starship-jj"
 srht_repo = "starship-jj"
 artifact_prefix = "starship-jj"
 binaries = ["starship-jj"]
+provider = "github"
+github_repo = "averagechris/starship-jj"
+expected_platforms = ["aarch64-darwin", "x86_64-linux"]
+sourcehut_through = "v1.0.1"
 
 [[repos]]
 name = "workctl"
