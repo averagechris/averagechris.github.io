@@ -16,7 +16,7 @@ class FleetProjectionTests(unittest.TestCase):
     def test_checked_in_projection_has_only_site_fields(self) -> None:
         fleet = load_fleet(ROOT)
         self.assertTrue(fleet)
-        allowed = {"name", "pages_subdir", "srht_repo", "artifact_prefix", "binaries", "provider", "github_repo", "expected_platforms"}
+        allowed = {"name", "pages_subdir", "srht_repo", "artifact_prefix", "binaries", "provider", "github_repo", "expected_platforms", "sourcehut_through"}
         self.assertTrue(all(set(row) <= allowed for row in fleet.values()))
 
     def test_operational_field_is_rejected(self) -> None:
@@ -55,7 +55,9 @@ class FleetProjectionTests(unittest.TestCase):
                 "wiki": [],
             }
             with mock.patch("averagechris_site.fleet.ls_remote", return_value=({"v1.0.0": "tag-sha"}, "main-sha")), \
-                 mock.patch("averagechris_site.fleet.fetch", side_effect=fetched):
+                 mock.patch("averagechris_site.fleet.run_text", return_value='[{"tag_name":"v1.0.0","draft":false}]'), \
+                 mock.patch("averagechris_site.fleet.fetch", side_effect=fetched), \
+                 mock.patch("averagechris_site.fleet.download_artifact", return_value=False):
                 result = acquire_fleet_data(root, config, root / "site", "https://example.test")
 
             project = result["projects"]["gander"]

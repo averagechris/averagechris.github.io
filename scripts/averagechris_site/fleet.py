@@ -19,6 +19,8 @@ import tempfile
 import tomllib
 import urllib.parse
 
+from averagechris_site.release_inventory import projected_releases
+
 import site_measure
 
 ARTIFACT_RE = re.compile(
@@ -98,7 +100,7 @@ def semver_key(tag: str) -> tuple[int, int, int]:
 def load_fleet(repo: pathlib.Path) -> dict[str, dict]:
     path = repo / "fleet-site.toml"
     data = tomllib.loads(path.read_text())
-    allowed = {"name", "pages_subdir", "srht_repo", "artifact_prefix", "binaries", "provider", "github_repo", "expected_platforms"}
+    allowed = {"name", "pages_subdir", "srht_repo", "artifact_prefix", "binaries", "provider", "github_repo", "expected_platforms", "sourcehut_through"}
     result: dict[str, dict] = {}
     for row in data.get("repos", []):
         provider = row.get("provider", "sourcehut")
@@ -188,6 +190,33 @@ def ls_remote(repo_name: str, *, provider: str = "sourcehut") -> tuple[dict[str,
             if SEMVER_TAG_RE.match(tag):
                 tags[tag] = sha
     return tags, main_sha
+
+
+def release_inventory(row: dict) -> tuple[list[dict], str]:
+    """Resolve the same projected inventory used by refresh, including bare builds."""
+    github_tags, github_main = ls_remote(row["github_repo"], provider="github")
+    if os.environ.get("FLEET_REFS_JSON"):
+        # Refresh pins contain only the already-projected release tags.  Do not
+        # make a second, moving GitHub Releases query during the render.
+        published = list(github_tags)
+    else:
+        command = ["curl", "-fsSL", "--retry", "2", "--user-agent", USER_AGENT,
+                   "-H", "Accept: application/vnd.github+json"]
+        if token := os.environ.get("GITHUB_TOKEN"):
+            command.extend(["-H", f"Authorization: Bearer {token}"])
+        command.append(f"https://api.github.com/repos/{row['github_repo']}/releases?per_page=100")
+        published_raw = run_text(command).encode()
+        try:
+            published = [r["tag_name"] for r in json.loads(published_raw or b"[]")
+                         if not r.get("draft") and SEMVER_TAG_RE.fullmatch(str(r.get("tag_name", "")))]
+        except (json.JSONDecodeError, TypeError, KeyError) as error:
+            fail(f"invalid GitHub release inventory for {row['github_repo']}: {error}")
+    sourcehut = None
+    if row.get("sourcehut_through"):
+        srht_tags, _ = ls_remote(row["srht_repo"])
+        sourcehut = {"tags": srht_tags}
+    releases = projected_releases(row, sourcehut, {"tags": github_tags, "published": published})
+    return releases, github_main
 
 
 def srht_raw(repo_name: str, ref: str, path: str) -> str:
@@ -444,8 +473,15 @@ def acquire_fleet_data(repo: pathlib.Path, config: dict, site_dir: pathlib.Path,
         f = {**fleet[p["path"]], "description": p.get("description", "")}
         print(f"  {p['path']}: resolving tags", flush=True)
         remote_name = remote_repo(f)
-        tags, main_sha = ls_remote(remote_name, provider=f.get("provider", "sourcehut"))
-        versions = sorted(tags, key=semver_key, reverse=True)
+        if f.get("provider") == "github":
+            releases, main_sha = release_inventory(f)
+            tags = {release["tag"]: release["tag_sha"] for release in releases}
+            providers = {release["tag"]: release["provider"] for release in releases}
+            versions = [release["tag"] for release in releases]
+        else:
+            tags, main_sha = ls_remote(remote_name, provider="sourcehut")
+            versions = sorted(tags, key=semver_key, reverse=True)
+            providers = {tag: "sourcehut" for tag in versions}
         if not versions:
             return {"path": p["path"], "published": False, "sha256": {}, "absent": {}}
         tag = versions[0]
@@ -453,7 +489,8 @@ def acquire_fleet_data(repo: pathlib.Path, config: dict, site_dir: pathlib.Path,
         docs = set()
         with concurrent.futures.ThreadPoolExecutor(max_workers=3) as inner:
             doc_futures = {inner.submit(fetch, remote_raw(f, main_sha, f"docs/pages/{doc}"), soft=True): doc for doc in DOC_PAGES}
-            changelog_future = inner.submit(fetch, remote_raw(f, tag, "CHANGELOG.md"), soft=True)
+            tag_source = {**f, "provider": providers[tag]}
+            changelog_future = inner.submit(fetch, remote_raw(tag_source, tag, "CHANGELOG.md"), soft=True)
             wiki_manifest_future = inner.submit(fetch, remote_raw(f, main_sha, "docs/wiki/index.toml"), soft=True)
             doc_results = {doc: future.result() for future, doc in doc_futures.items()}
             changelog_text = (changelog_future.result() or b"").decode("utf-8", "replace")
@@ -479,9 +516,11 @@ def acquire_fleet_data(repo: pathlib.Path, config: dict, site_dir: pathlib.Path,
 
             sha_prefetches = []
             for index, v in enumerate(versions):
-                for platform in expected_platforms(f):
+                version_platforms = PLATFORMS if providers[v] == "sourcehut" and f.get("sourcehut_through") else expected_platforms(f)
+                for platform in version_platforms:
                     name = f"{f['artifact_prefix']}-{v}-{platform}.tar.gz"
-                    url = remote_download(f, v, name); sha_url = url + ".sha256"
+                    vf = {**f, "provider": providers[v]}
+                    url = remote_download(vf, v, name); sha_url = url + ".sha256"
                     key = f"{p['path']}/{name}"
                     hosted = index < 3
                     if hosted or (key not in cached_sha256 and key not in cached_absent):
@@ -492,9 +531,11 @@ def acquire_fleet_data(repo: pathlib.Path, config: dict, site_dir: pathlib.Path,
         learned_sha256: dict[str, str] = {}
         learned_absent: dict[str, bool] = {}
         for index, v in enumerate(versions):
-            for platform in expected_platforms(f):
+            version_platforms = PLATFORMS if providers[v] == "sourcehut" and f.get("sourcehut_through") else expected_platforms(f)
+            for platform in version_platforms:
                 name = f"{f['artifact_prefix']}-{v}-{platform}.tar.gz"
-                url = remote_download(f, v, name); sha_url = url + ".sha256"
+                vf = {**f, "provider": providers[v]}
+                url = remote_download(vf, v, name); sha_url = url + ".sha256"
                 key = f"{p['path']}/{name}"
                 hosted = index < 3
                 sha_data = None

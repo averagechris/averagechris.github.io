@@ -172,7 +172,9 @@ class RefreshTests(unittest.TestCase):
         with mock.patch.object(refresh_pages.subprocess, "check_output", side_effect=responses) as check_output:
             tags, latest, main, tag_shas, _, assets = refresh_pages.github_release("averagechris/gander")
         self.assertEqual((tags, latest, main), (["v1.2.3"], "v1.2.3", "main-sha"))
-        self.assertEqual(tag_shas, {"v1.2.3": "tag-object"})
+        # All annotated objects remain available for mixed-history identity
+        # validation, while only published releases appear in ``tags``.
+        self.assertEqual(tag_shas, {"v1.2.3": "tag-object", "v2.0.0": "draft-tag-object"})
         self.assertIn("gander-v1.2.3-x86_64-linux.tar.gz", assets["v1.2.3"])
         self.assertEqual(check_output.call_count, 4)
 
@@ -196,6 +198,34 @@ class RefreshTests(unittest.TestCase):
             self.assertEqual(set(fingerprint), {"_publisher", "shown"})
             self.assertEqual([call.args[0] for call in ls_refs.call_args_list], ["shown"])
 
+    def test_mixed_historical_fingerprint_matches_sourcehut_built_state(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            (root / "site-data").mkdir()
+            (root / "fleet-site.toml").write_text(
+                '[[repos]]\nname="gander"\npages_subdir="gander"\nsrht_repo="gander"\n'
+                'artifact_prefix="gander"\nprovider="github"\ngithub_repo="averagechris/gander"\n'
+                'expected_platforms=["x86_64-linux"]\nsourcehut_through="v0.8.1"\n'
+            )
+            (root / "site-data/projects.toml").write_text('[[projects]]\npath="gander"\ndownloads=true\n')
+            (root / "site-data/games.toml").write_text("games=[]\n")
+            release = {"tag": "v0.8.1", "tag_sha": "tag-object", "provider": "sourcehut"}
+            source = {"tags": {"v0.8.1": "tag-object"}, "main_sha": "srht-main"}
+            with mock.patch.object(refresh_pages, "publisher_revision", return_value="publisher"), \
+                 mock.patch.object(refresh_pages, "inventory", return_value=([release], "github-main", {}, {}, source)), \
+                 mock.patch.object(refresh_pages, "probe", return_value=True), \
+                 mock.patch.object(refresh_pages, "checksum", return_value="a" * 64):
+                current, _ = refresh_pages.fingerprint(root)
+            state = {"publisher_sha": "publisher", "projects": {"gander": {
+                "tag": "v0.8.1", "tag_sha": "tag-object", "main_sha": "github-main",
+                "artifacts": [{"name": f"gander-v0.8.1-{platform}.tar.gz", "version": "v0.8.1", "sha256": "a" * 64}
+                              for platform in refresh_pages.PLATFORMS],
+            }}}
+            with mock.patch.object(refresh_pages, "live_state", return_value=state):
+                built = refresh_pages.live_fingerprint("example.test")
+            self.assertEqual(current, built)
+            self.assertEqual(len(current["gander"]["artifacts"]), 4)
+
     def test_comparison_classifies_exact_palabra_main_sha_mismatch(self) -> None:
         current = {
             "_publisher": {"main_sha": "site"},
@@ -207,6 +237,12 @@ class RefreshTests(unittest.TestCase):
             refresh_pages.classify_comparison(current, live),
             "games.palabra.main_sha-only",
         )
+
+    def test_no_drop_guard_rejects_semver_regression(self) -> None:
+        current = {"tool": {"tag": "v1.0.0"}}
+        live = {"tool": {"tag": "v1.1.0"}}
+        with self.assertRaisesRegex(SystemExit, r"v1\.1\.0 -> v1\.0\.0"):
+            refresh_pages.reject_dropped_live_projects(current, live)
 
     def test_controlled_live_state_cannot_enable_publication(self) -> None:
         with mock.patch.object(refresh_pages, "fingerprint") as fingerprint, \
@@ -402,6 +438,23 @@ class RefreshTests(unittest.TestCase):
             with mock.patch.dict(os.environ, env, clear=False), mock.patch.object(refresh_pages, "github_release", return_value=release), mock.patch.object(refresh_pages, "checksum", return_value="a" * 64) as checksum:
                 refresh_pages.wait_for_trigger(root)
             self.assertEqual(checksum.call_count, 2)
+
+    def test_mixed_github_row_rejects_historical_trigger_without_network(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            (root / "site-data").mkdir()
+            (root / "site-data/games.toml").write_text("games=[]\n")
+            (root / "fleet-site.toml").write_text(
+                '[[repos]]\nname="gander"\npages_subdir="gander"\nsrht_repo="gander"\n'
+                'artifact_prefix="gander"\nprovider="github"\ngithub_repo="averagechris/gander"\n'
+                'expected_platforms=["x86_64-linux"]\nsourcehut_through="v0.8.1"\n'
+            )
+            env = {"TRIGGER_PROJECT": "gander", "TRIGGER_TAG": "v0.8.1", "TRIGGER_SHA": "c" * 40}
+            with mock.patch.dict(os.environ, env, clear=False), \
+                 mock.patch.object(refresh_pages, "inventory") as inventory, \
+                 self.assertRaisesRegex(SystemExit, "historical SourceHut release"):
+                refresh_pages.wait_for_trigger(root)
+            inventory.assert_not_called()
 
     def test_github_platform_contract_fails_closed(self) -> None:
         with self.assertRaisesRegex(SystemExit, "requires expected_platforms"):

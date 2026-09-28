@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse, concurrent.futures, copy, json, os, pathlib, re, shutil, subprocess, sys, tempfile, time, tomllib, urllib.parse
 
 import site_measure
+from averagechris_site.release_inventory import projected_releases, semver_key
 
 SEMVER = re.compile(r"^v\d+\.\d+\.\d+$")
 
@@ -55,15 +56,26 @@ def github_release(repo: str) -> tuple[list[str], str, str, dict[str, str], dict
     published = [r for r in releases if not r.get("draft") and SEMVER.match(str(r.get("tag_name", "")))]
     published.sort(key=lambda r: tuple(map(int, r["tag_name"][1:].split("."))), reverse=True)
     refs = github_api(repo, "git/matching-refs/tags/v")
-    published_names = {r["tag_name"] for r in published}
-    annotated = [r for r in refs if r["ref"].removeprefix("refs/tags/") in published_names and r["object"].get("type") == "tag"]
+    annotated = [r for r in refs if SEMVER.match(r["ref"].removeprefix("refs/tags/")) and r["object"].get("type") == "tag"]
     tag_shas = {r["ref"].removeprefix("refs/tags/"): r["object"]["sha"] for r in annotated}
-    tag_commits = {tag: github_api(repo, f"git/tags/{sha}")["object"]["sha"] for tag, sha in tag_shas.items()}
+    published_names = {r["tag_name"] for r in published}
+    tag_commits = {tag: github_api(repo, f"git/tags/{sha}")["object"]["sha"] for tag, sha in tag_shas.items() if tag in published_names}
     published = [r for r in published if r["tag_name"] in tag_shas]
     main = github_api(repo, "commits/main")
     assets = {r["tag_name"]: {a["name"]: a for a in r.get("assets", [])} for r in published}
     tags = [r["tag_name"] for r in published]
     return tags, tags[0] if tags else "", main["sha"], tag_shas, tag_commits, assets
+
+
+def inventory(row: dict) -> tuple[list[dict], str, dict[str, str], dict[str, dict], dict | None]:
+    """Shared policy adapter for fingerprinting and trigger readiness."""
+    gh = github_release(row["github_repo"])
+    source = None
+    if row.get("sourcehut_through"):
+        srht = ls_refs(row["srht_repo"])
+        source = {"tags": srht[3], "main_sha": srht[2]}
+    releases = projected_releases(row, source, {"tags": gh[3], "published": gh[0]})
+    return releases, gh[2], gh[4], gh[5], source
 
 def publisher_revision(root: pathlib.Path, *, provider: str = "sourcehut") -> str:
     try:
@@ -169,34 +181,44 @@ def fingerprint(root: pathlib.Path, *, publisher_sha_override: str | None = None
         repo = r.get("github_repo") if r.get("provider") == "github" else r.get("srht_repo", r.get("name", r.get("slug")))
         gh_assets = {}
         if r.get("provider") == "github":
-            _, tag, main, tags, _, gh_assets = github_release(repo)
+            releases, main, _, gh_assets, source = inventory(r)
+            tag = releases[0]["tag"] if releases else ""
+            tags = {release["tag"]: release["tag_sha"] for release in releases}
+            release_provider = releases[0]["provider"] if releases else "github"
         else:
             _, tag, main, tags, _ = ls_refs(repo)
+            release_provider = "sourcehut"
         artifacts = []
         if tag:
             prefix = r.get("artifact_prefix", r.get("name", r.get("slug")))
-            suffixes = ["web"] if r["kind"] == "web_game" else expected_platforms(r)
+            suffixes = (["web"] if r["kind"] == "web_game" else
+                        (list(PLATFORMS) if release_provider == "sourcehut" and r.get("sourcehut_through")
+                         else expected_platforms(r)))
             for suffix in suffixes:
                 name = f"{prefix}-{tag}-{suffix}.tar.gz"
-                if r.get("provider") == "github":
+                if release_provider == "github":
                     listed = gh_assets.get(tag, {})
                     asset = listed.get(name); sum_asset = listed.get(name + ".sha256")
                     url = asset["browser_download_url"] if asset else ""
                     digest = checksum(sum_asset["browser_download_url"], name) if asset and sum_asset else None
                     present = bool(asset and sum_asset)
                 else:
-                    url = f"https://git.sr.ht/~averagechris/{repo}/refs/download/{tag}/{name}"
+                    source_repo = r.get("srht_repo", repo)
+                    url = f"https://git.sr.ht/~averagechris/{source_repo}/refs/download/{tag}/{name}"
                     present = probe(url); digest = checksum(url + ".sha256", name) if present else None
                 if present:
                     if digest is not None:
                         artifacts.append({"name": name, "sha256": digest})
-        return r["key"], {"tag": tag, "tag_sha": tags.get(tag, ""), "main_sha": main, "artifacts": sorted(artifacts, key=lambda a: a["name"])}, repo, {"tags": tags, "main_sha": main}
+        pinned = {repo: {"tags": tags, "main_sha": main}}
+        if r.get("sourcehut_through") and source is not None:
+            pinned[r["srht_repo"]] = source
+        return r["key"], {"tag": tag, "tag_sha": tags.get(tag, ""), "main_sha": main, "artifacts": sorted(artifacts, key=lambda a: a["name"])}, pinned
     with concurrent.futures.ThreadPoolExecutor(max_workers=6) as ex:
         futures = {ex.submit(one, r): r for r in entries}
         results = {futures[f]["key"]: f.result() for f in concurrent.futures.as_completed(futures)}
     for r in entries:
-        page, fp, repo, ref = results[r["key"]]
-        out[page] = fp; refs[repo] = ref
+        page, fp, pinned = results[r["key"]]
+        out[page] = fp; refs.update(pinned)
     return out, refs
 
 def write_refs_json(root: pathlib.Path, refs: dict[str, dict]) -> pathlib.Path:
@@ -255,6 +277,21 @@ def classify_comparison(current: dict[str, dict], live: dict[str, dict]) -> str:
         return "games.palabra.main_sha-only"
     return "other-mismatch"
 
+
+def reject_dropped_live_projects(current: dict[str, dict], live: dict[str, dict]) -> None:
+    dropped = sorted(key for key in live if key != "_publisher" and live[key].get("tag") and not current.get(key, {}).get("tag"))
+    if dropped:
+        raise SystemExit(f"release inventory unexpectedly empty for live project(s): {', '.join(dropped)}")
+    regressed = sorted(
+        key for key, prior in live.items()
+        if key != "_publisher" and SEMVER.fullmatch(str(prior.get("tag", "")))
+        and SEMVER.fullmatch(str(current.get(key, {}).get("tag", "")))
+        and semver_key(current[key]["tag"]) < semver_key(prior["tag"])
+    )
+    if regressed:
+        details = ", ".join(f"{key} ({live[key]['tag']} -> {current[key]['tag']})" for key in regressed)
+        raise SystemExit(f"release inventory regressed for live project(s): {details}")
+
 def wait_for_trigger(root: pathlib.Path) -> None:
     project, tag, expected_sha = os.environ.get("TRIGGER_PROJECT"), os.environ.get("TRIGGER_TAG"), os.environ.get("TRIGGER_SHA")
     supplied = (bool(project), bool(tag), bool(expected_sha))
@@ -272,13 +309,17 @@ def wait_for_trigger(root: pathlib.Path) -> None:
     if entry is None:
         raise SystemExit(f"TRIGGER_PROJECT is not in the site registry: {project}")
     provider = entry.get("provider", "sourcehut") if entry else "sourcehut"
+    if provider == "github" and entry.get("sourcehut_through") and semver_key(tag) <= semver_key(entry["sourcehut_through"]):
+        raise SystemExit(f"historical SourceHut release cannot trigger GitHub publication: {project}/{tag}")
     repo = entry.get("github_repo") if provider == "github" else entry.get("srht_repo") or entry["name"]
     deadline, delay = time.monotonic() + 300, 5
     while time.monotonic() < deadline:
         gh_assets = {}
         if provider == "github":
-            refs = github_release(repo)
-            gh_assets = refs[5].get(tag, {})
+            releases, main, commits, assets, _ = inventory(entry)
+            refs = ([r["tag"] for r in releases], releases[0]["tag"] if releases else "", main,
+                    {r["tag"]: r["tag_sha"] for r in releases}, commits, assets)
+            gh_assets = assets.get(tag, {})
         else:
             refs = ls_refs(repo)
         if tag in refs[0]:
@@ -355,6 +396,7 @@ def main(argv: list[str] | None = None) -> None:
         )
     with site_measure.stage("live_state_comparison"):
         live = benchmark_live_fingerprint(current, args.benchmark_live_state) if args.benchmark_live_state else live_fingerprint(args.domain)
+        reject_dropped_live_projects(current, live)
         comparison = classify_comparison(current, live)
     print(f"fingerprint comparison: {comparison}")
     if not args.force and comparison == "unchanged":
