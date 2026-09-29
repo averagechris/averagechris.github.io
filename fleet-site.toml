@@ -26,6 +26,10 @@ pages_subdir = "granola-cli"
 srht_repo = "granola-cli"
 artifact_prefix = "granola-cli"
 binaries = ["granola"]
+provider = "github"
+github_repo = "averagechris/granola-cli"
+expected_platforms = ["aarch64-darwin", "x86_64-linux"]
+sourcehut_through = "v0.8.2"
 
 [[repos]]
 name = "hister"

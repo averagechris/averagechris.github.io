@@ -97,11 +97,11 @@
         "srht": "srht"
       },
       "locked": {
-        "lastModified": 1790634780,
-        "narHash": "sha256-tEioSSp4npyI9mBudETo7V66E8MDTcSBSpTRtE+YXGg=",
+        "lastModified": 1790725640,
+        "narHash": "sha256-7wnCciNIebt5z4+q819V2UyiBS6AbhcTBixq18IqvQc=",
         "owner": "averagechris",
         "repo": "fleet",
-        "rev": "4c209a8df8f2cd94712485653260f796ecd6845e",
+        "rev": "f0a4136edb7fd90add85b30dd3069b30b0c92a1f",
         "type": "github"
       },
       "original": {
