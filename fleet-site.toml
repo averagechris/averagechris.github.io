@@ -41,6 +41,10 @@ pages_subdir = "hister"
 srht_repo = "hister"
 artifact_prefix = "hister"
 binaries = ["hister"]
+provider = "github"
+github_repo = "averagechris/hister"
+expected_platforms = ["aarch64-darwin", "x86_64-linux"]
+sourcehut_through = "v1.0.0"
 
 [[repos]]
 name = "linear-cli"
@@ -81,6 +85,10 @@ pages_subdir = "slack"
 srht_repo = "slack"
 artifact_prefix = "slack"
 binaries = ["slack"]
+provider = "github"
+github_repo = "averagechris/slack"
+expected_platforms = ["aarch64-darwin", "x86_64-linux"]
+sourcehut_through = "v0.3.1"
 
 [[repos]]
 name = "starship-jj"
