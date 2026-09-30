@@ -75,7 +75,8 @@ Top-level fields:
     `srht_repo`, `artifact_prefix`, optional `binaries`, and related fleet
     settings needed by the downloads page renderer).
   - `tag`: latest semver tag.
-  - `tag_sha`: annotated tag object SHA from sourcehut.
+  - `tag_sha`: raw tag-ref object SHA from sourcehut (a tag object for an
+    annotated tag or a commit object for a historical lightweight tag).
   - `main_sha`: pinned `main` SHA used for docs acquisition.
   - `docs`: sorted copied docs page filenames.
   - `hosted_versions`: newest versions whose artifacts/checksums were copied
@@ -104,7 +105,7 @@ both tools and games, then refresh fingerprints again before publication. A
 missing or malformed pin is fatal rather than silently falling back to mutable
 remote refs. A release-triggered refresh waits for the requested tag and at least one complete
 artifact/checksum pair, avoiding the tag-to-artifact visibility race.
-Tag object SHAs are part of both fingerprints, so even an unexpected tag
+Raw tag-ref object SHAs are part of both fingerprints, so even an unexpected tag
 retarget cannot pass the stability check. A newest game tag without its checksum
 is treated as a transient hard failure, never as permission to remove the prior
 playable route. Main-branch publishing uses `refresh-pages --force`: site-code

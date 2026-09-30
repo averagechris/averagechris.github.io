@@ -168,6 +168,12 @@ def ls_remote(repo_name: str, *, provider: str = "sourcehut") -> tuple[dict[str,
         # refresh_pages hands off the refs from the build attempt's stable
         # before fingerprint so this render skips duplicate ls-remote calls.
         return dict(entry["tags"]), entry["main_sha"]
+    tags, main_sha, _ = _live_remote_refs(repo_name, provider=provider)
+    return tags, main_sha
+
+
+def _live_remote_refs(repo_name: str, *, provider: str) -> tuple[dict[str, str], str, set[str]]:
+    """Return raw tag refs, main, and tags proven annotated by peeled refs."""
     # git's default UA gets tarpitted by sr.ht's anti-scraper defenses on
     # datacenter IPs just like python-urllib (observed as a silent 120s hang
     # in CI); send the same UA curl uses, and retry once since the tarpit
@@ -180,26 +186,31 @@ def ls_remote(repo_name: str, *, provider: str = "sourcehut") -> tuple[dict[str,
     except SystemExit:
         out = run_text(command)
     tags: dict[str, str] = {}
+    annotated: set[str] = set()
     main_sha = ""
     for line in out.splitlines():
         sha, ref = line.split("\t", 1)
         if ref == "refs/heads/main":
             main_sha = sha
-        elif ref.startswith("refs/tags/v") and not ref.endswith("^{}"):
-            tag = ref.removeprefix("refs/tags/")
+        elif ref.startswith("refs/tags/v"):
+            tag = ref.removeprefix("refs/tags/").removesuffix("^{}")
             if SEMVER_TAG_RE.match(tag):
-                tags[tag] = sha
-    return tags, main_sha
+                if ref.endswith("^{}"):
+                    annotated.add(tag)
+                else:
+                    tags[tag] = sha
+    return tags, main_sha, annotated
 
 
 def release_inventory(row: dict) -> tuple[list[dict], str]:
     """Resolve the same projected inventory used by refresh, including bare builds."""
-    github_tags, github_main = ls_remote(row["github_repo"], provider="github")
     if os.environ.get("FLEET_REFS_JSON"):
+        github_tags, github_main = ls_remote(row["github_repo"], provider="github")
         # Refresh pins contain only the already-projected release tags.  Do not
         # make a second, moving GitHub Releases query during the render.
         published = list(github_tags)
     else:
+        github_tags, github_main, annotated = _live_remote_refs(row["github_repo"], provider="github")
         command = ["curl", "-fsSL", "--retry", "2", "--user-agent", USER_AGENT,
                    "-H", "Accept: application/vnd.github+json"]
         if token := os.environ.get("GITHUB_TOKEN"):
@@ -208,7 +219,9 @@ def release_inventory(row: dict) -> tuple[list[dict], str]:
         published_raw = run_text(command).encode()
         try:
             published = [r["tag_name"] for r in json.loads(published_raw or b"[]")
-                         if not r.get("draft") and SEMVER_TAG_RE.fullmatch(str(r.get("tag_name", "")))]
+                         if not r.get("draft")
+                         and SEMVER_TAG_RE.fullmatch(str(r.get("tag_name", "")))
+                         and r["tag_name"] in annotated]
         except (json.JSONDecodeError, TypeError, KeyError) as error:
             fail(f"invalid GitHub release inventory for {row['github_repo']}: {error}")
     sourcehut = None

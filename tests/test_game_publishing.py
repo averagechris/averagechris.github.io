@@ -159,12 +159,14 @@ class RefreshTests(unittest.TestCase):
     def test_github_release_ignores_drafts_and_lists_published_assets(self) -> None:
         releases = [
             {"tag_name": "v2.0.0", "draft": True, "assets": []},
+            {"tag_name": "v1.0.0", "draft": False, "assets": []},
             {"tag_name": "v1.2.3", "draft": False, "assets": [
                 {"name": "gander-v1.2.3-x86_64-linux.tar.gz", "browser_download_url": "https://assets/archive"},
                 {"name": "gander-v1.2.3-x86_64-linux.tar.gz.sha256", "browser_download_url": "https://assets/checksum"},
             ]},
         ]
         refs = [
+            {"ref": "refs/tags/v1.0.0", "object": {"sha": "lightweight-commit", "type": "commit"}},
             {"ref": "refs/tags/v1.2.3", "object": {"sha": "tag-object", "type": "tag"}},
             {"ref": "refs/tags/v2.0.0", "object": {"sha": "draft-tag-object", "type": "tag"}},
         ]
@@ -172,11 +174,37 @@ class RefreshTests(unittest.TestCase):
         with mock.patch.object(refresh_pages.subprocess, "check_output", side_effect=responses) as check_output:
             tags, latest, main, tag_shas, _, assets = refresh_pages.github_release("averagechris/gander")
         self.assertEqual((tags, latest, main), (["v1.2.3"], "v1.2.3", "main-sha"))
-        # All annotated objects remain available for mixed-history identity
-        # validation, while only published releases appear in ``tags``.
-        self.assertEqual(tag_shas, {"v1.2.3": "tag-object", "v2.0.0": "draft-tag-object"})
+        # All tag refs remain available for mixed-history identity validation,
+        # while only published annotated releases appear in ``tags``.
+        self.assertEqual(tag_shas, {"v1.0.0": "lightweight-commit", "v1.2.3": "tag-object", "v2.0.0": "draft-tag-object"})
         self.assertIn("gander-v1.2.3-x86_64-linux.tar.gz", assets["v1.2.3"])
         self.assertEqual(check_output.call_count, 4)
+
+    def test_inventory_accepts_historical_lightweight_but_rejects_future_lightweight_release(self) -> None:
+        row = {"name": "linear-cli", "provider": "github", "github_repo": "averagechris/linear-cli",
+               "srht_repo": "linear-cli", "sourcehut_through": "v0.1.2"}
+        releases = [
+            {"tag_name": "v0.1.4", "draft": False, "assets": []},
+            {"tag_name": "v0.1.3", "draft": False, "assets": []},
+            {"tag_name": "v0.1.2", "draft": False, "assets": []},
+        ]
+        refs = [
+            {"ref": "refs/tags/v0.1.2", "object": {"sha": "historical-commit", "type": "commit"}},
+            {"ref": "refs/tags/v0.1.3", "object": {"sha": "future-commit", "type": "commit"}},
+            {"ref": "refs/tags/v0.1.4", "object": {"sha": "future-tag", "type": "tag"}},
+        ]
+        responses = [json.dumps(releases), json.dumps(refs),
+                     json.dumps({"object": {"sha": "future-commit-peeled"}}),
+                     json.dumps({"sha": "main-sha"})]
+        srht = ([], "", "srht-main", {"v0.1.2": "historical-commit"}, {})
+        with mock.patch.object(refresh_pages.subprocess, "check_output", side_effect=responses), \
+             mock.patch.object(refresh_pages, "ls_refs", return_value=srht):
+            projected, _, commits, assets, source = refresh_pages.inventory(row)
+        self.assertEqual([(r["tag"], r["provider"]) for r in projected],
+                         [("v0.1.4", "github"), ("v0.1.2", "sourcehut")])
+        self.assertEqual(commits, {"v0.1.4": "future-commit-peeled"})
+        self.assertEqual(assets, {"v0.1.4": {}})
+        self.assertEqual(source["tags"], {"v0.1.2": "historical-commit"})
 
     def test_fingerprint_uses_only_canonical_site_projects(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

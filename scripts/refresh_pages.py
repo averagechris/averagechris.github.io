@@ -56,11 +56,21 @@ def github_release(repo: str) -> tuple[list[str], str, str, dict[str, str], dict
     published = [r for r in releases if not r.get("draft") and SEMVER.match(str(r.get("tag_name", "")))]
     published.sort(key=lambda r: tuple(map(int, r["tag_name"][1:].split("."))), reverse=True)
     refs = github_api(repo, "git/matching-refs/tags/v")
-    annotated = [r for r in refs if SEMVER.match(r["ref"].removeprefix("refs/tags/")) and r["object"].get("type") == "tag"]
-    tag_shas = {r["ref"].removeprefix("refs/tags/"): r["object"]["sha"] for r in annotated}
+    semver_refs = [
+        r for r in refs
+        if SEMVER.match(r["ref"].removeprefix("refs/tags/"))
+        and r["object"].get("type") in {"tag", "commit"}
+    ]
+    # Raw ref objects preserve historical identity for both annotated and
+    # lightweight tags.  Publication still requires an annotated tag below.
+    tag_shas = {r["ref"].removeprefix("refs/tags/"): r["object"]["sha"] for r in semver_refs}
+    annotated_shas = {
+        r["ref"].removeprefix("refs/tags/"): r["object"]["sha"]
+        for r in semver_refs if r["object"]["type"] == "tag"
+    }
     published_names = {r["tag_name"] for r in published}
-    tag_commits = {tag: github_api(repo, f"git/tags/{sha}")["object"]["sha"] for tag, sha in tag_shas.items() if tag in published_names}
-    published = [r for r in published if r["tag_name"] in tag_shas]
+    tag_commits = {tag: github_api(repo, f"git/tags/{sha}")["object"]["sha"] for tag, sha in annotated_shas.items() if tag in published_names}
+    published = [r for r in published if r["tag_name"] in annotated_shas]
     main = github_api(repo, "commits/main")
     assets = {r["tag_name"]: {a["name"]: a for a in r.get("assets", [])} for r in published}
     tags = [r["tag_name"] for r in published]

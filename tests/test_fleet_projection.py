@@ -54,7 +54,7 @@ class FleetProjectionTests(unittest.TestCase):
                 "projects": [{"path": "gander", "downloads": True, "description": "Gander"}],
                 "wiki": [],
             }
-            with mock.patch("averagechris_site.fleet.ls_remote", return_value=({"v1.0.0": "tag-sha"}, "main-sha")), \
+            with mock.patch("averagechris_site.fleet._live_remote_refs", return_value=({"v1.0.0": "tag-sha"}, "main-sha", {"v1.0.0"})), \
                  mock.patch("averagechris_site.fleet.run_text", return_value='[{"tag_name":"v1.0.0","draft":false}]'), \
                  mock.patch("averagechris_site.fleet.fetch", side_effect=fetched), \
                  mock.patch("averagechris_site.fleet.download_artifact", return_value=False):

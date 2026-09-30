@@ -14,10 +14,10 @@ def semver_key(tag: str) -> tuple[int, int, int]:
 def projected_releases(row: dict, sourcehut: dict | None, github: dict) -> list[dict]:
     """Return ordered releases, preserving the source of pre-migration tags.
 
-    Inventories contain ``tags`` (annotated tag object SHAs), ``main_sha``, and,
-    for GitHub, ``published``.  A mixed row additionally requires every
-    historical SourceHut tag to have the identical annotated object on GitHub;
-    this catches incomplete migrations instead of silently changing identity.
+    Inventories contain ``tags`` (raw tag-ref object SHAs), ``main_sha``, and,
+    for GitHub, ``published`` annotated releases.  A mixed row additionally
+    requires every historical SourceHut tag to have the identical ref object on
+    GitHub; this preserves both annotated and lightweight tag identity.
     """
     boundary = row.get("sourcehut_through")
     if not boundary:
@@ -32,7 +32,7 @@ def projected_releases(row: dict, sourcehut: dict | None, github: dict) -> list[
     historical = {tag: sha for tag, sha in sourcehut["tags"].items() if semver_key(tag) <= cutoff}
     for tag, sha in historical.items():
         if github["tags"].get(tag) != sha:
-            raise SystemExit(f"{row['name']} {tag}: SourceHut and GitHub annotated tag objects do not match")
+            raise SystemExit(f"{row['name']} {tag}: SourceHut and GitHub tag refs do not match")
     releases = [{"tag": tag, "tag_sha": sha, "provider": "sourcehut"} for tag, sha in historical.items()]
     releases += [
         {"tag": tag, "tag_sha": github["tags"][tag], "provider": "github"}
