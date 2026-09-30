@@ -8,6 +8,10 @@ pages_subdir = "ctx"
 srht_repo = "ctx"
 artifact_prefix = "ctx"
 binaries = ["ctx"]
+provider = "github"
+github_repo = "averagechris/ctx"
+expected_platforms = ["aarch64-darwin", "x86_64-linux"]
+sourcehut_through = "v1.2.0"
 
 [[repos]]
 name = "gander"
@@ -44,6 +48,10 @@ pages_subdir = "linear-cli"
 srht_repo = "linear-cli"
 artifact_prefix = "linear-cli"
 binaries = ["linear"]
+provider = "github"
+github_repo = "averagechris/linear-cli"
+expected_platforms = ["aarch64-darwin", "x86_64-linux"]
+sourcehut_through = "v1.6.4"
 
 [[repos]]
 name = "rdny"
